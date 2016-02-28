@@ -1,4 +1,5 @@
-ckbox
+#blackbox
+
 BlackBox security framework based on [DynamoRIO](https://github.com/DynamoRIO/dynamorio)
 
 Thanks for your interest in BlackBox. Since the implementation is based on an SVN commit, we are
