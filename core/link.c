@@ -48,6 +48,9 @@
 #include <string.h> /* for memset */
 #include "perscache.h"
 #include "instr.h" /* PC_RELATIVE_TARGET */
+#ifdef SECURITY_AUDIT
+# include "audit.h"
+#endif
 
 /* fragment_t and future_fragment_t are guaranteed to have flags field at same offset,
  * so we use it to find incoming_stubs offset
@@ -1784,7 +1787,7 @@ link_fragment_incoming(dcontext_t *dcontext, fragment_t *f, bool new_fragment)
 #ifdef SECURITY_AUDIT
         if (!(IS_SPECIAL_LINKSTUB(l) || TEST(FRAG_TEMP_PRIVATE, f->flags) ||
               TEST(FRAG_IS_TRACE, in_f->flags))) {
-            audit_fragment_link_tags(dcontext, in_f->tag, f->tag, 0/*what ordinal??*/);
+            audit_fragment_link_tags(dcontext, in_f->tag, f->tag, 0xff/*what ordinal??*/);
         }
 #endif
         if (is_linkable(dcontext, in_f, l, f,

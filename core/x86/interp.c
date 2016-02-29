@@ -55,6 +55,9 @@
 #include "disassemble.h"
 #include <string.h> /* for memcpy */
 #include "instrument.h"
+#ifdef SECURITY_AUDIT
+# include "audit.h"
+#endif
 #include "../hotpatch.h"
 #ifdef RETURN_AFTER_CALL
 # include "../rct.h"

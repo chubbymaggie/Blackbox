@@ -49,6 +49,9 @@
 #include "utils.h"
 #include "monitor.h"
 #include "vmareas.h"
+#ifdef SECURITY_AUDIT
+# include "audit.h"
+#endif
 #ifdef SIDELINE
 # include "sideline.h"
 #endif
@@ -57,6 +60,9 @@
 #endif
 #ifdef CLIENT_INTERFACE
 # include "instrument.h"
+#endif
+#ifdef SECURITY_AUDIT
+# include "audit.h"
 #endif
 #include "hotpatch.h"
 #include "moduledb.h"

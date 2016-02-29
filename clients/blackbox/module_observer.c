@@ -379,8 +379,6 @@ void
 init_module_observer(bool is_fork) {
     CROWD_SAFE_DEBUG_HOOK_VOID(__FUNCTION__);
 
-    drsym_init(0);
-
     if (!is_fork) {
         app_pc s;
         bb_hash_t hash;
@@ -1114,8 +1112,6 @@ void
 destroy_module_observer() {
     uint i;
     CROWD_SAFE_DEBUG_HOOK_VOID(__FUNCTION__);
-
-    drsym_exit();
 
     for (i = 0; i < module_list->entries; i++)
         free_module_location(module_list->array[i]);

@@ -32,8 +32,6 @@
 
 /**** Private Fields ****/
 
-#define DECLARE_LINK_TRACKER link_tracker_t *link_tracker;
-
 static int *initialized_thread_count;
 static uint *debug_count;
 

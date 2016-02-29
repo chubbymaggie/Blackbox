@@ -5780,29 +5780,4 @@ instrlist_insert_push_instr_addr(void *drcontext, instr_t *src_inst,
                                  instrlist_t *ilist, instr_t *where,
                                  instr_t **first OUT, instr_t **second OUT);
 
-/* DR_API EXPORT TOFILE dr_audit.h */
-/* DR_API EXPORT BEGIN */
-
-/****************************************************************************
- * SECURITY AUDITING SUPPORT
- */
-/* DR_API EXPORT END */
-
-#ifdef SECURITY_AUDIT
-DR_API
-void
-dr_register_dispatch_event(void (*func)(dcontext_t *dcontext));
-
-DR_API
-void
-dr_unregister_dispatch_event(void (*func)(dcontext_t *dcontext));
-
-void
-audit_dispatch(dcontext_t *dcontext);
-
-void
-audit_fcache_enter(dcontext_t *dcontext);
-
-#endif
-
 #endif /* _INSTRUMENT_H_ */

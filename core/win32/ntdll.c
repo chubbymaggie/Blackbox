@@ -77,7 +77,7 @@
 #include <wchar.h> /* _snwprintf */
 
 #ifdef SECURITY_AUDIT
-# include "../x86/instrument.h"
+# include "audit.h"
 #endif
 
 /* WARNING: these routines use the Native API, an undocumented API

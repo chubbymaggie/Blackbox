@@ -56,7 +56,10 @@
 #include "decode.h"
 #include "decode_fast.h"
 #ifdef DEBUG
-#include "disassemble.h"
+# include "disassemble.h"
+#endif
+#ifdef SECURITY_AUDIT
+# include "audit.h"
 #endif
 #include <limits.h> /* for UCHAR_MAX */
 #include "../perscache.h"

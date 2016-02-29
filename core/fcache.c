@@ -53,6 +53,9 @@
 #include "perscache.h"
 #include "synch.h"
 #include "x86/instrument.h"
+#ifdef SECURITY_AUDIT
+# include "audit.h"
+#endif
 
 /* A code cache is made up of multiple separate mmapped units
  * We grow a unit by resizing, shifting, and relinking, up to a maximum size,

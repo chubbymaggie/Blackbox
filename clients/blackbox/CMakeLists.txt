@@ -46,6 +46,7 @@ else()
 endif ()
 
 add_library(blackbox ${libtype}
+  blackbox.c
   crowd_safe_util.c
   basic_block_hashtable.c
   basic_block_observer.c

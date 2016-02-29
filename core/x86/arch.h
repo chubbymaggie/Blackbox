@@ -48,6 +48,9 @@
 #include "instr.h" /* for reg_id_t */
 #include "decode.h" /* for X64_CACHE_MODE_DC */
 #include "arch_exports.h" /* for FRAG_IS_32 and FRAG_IS_X86_TO_X64 */
+#ifdef SECURITY_AUDIT
+# include "audit.h"
+#endif
 
 /* FIXME: check on all platforms: these are for Fedora 8 and XP SP2
  * Keep in synch w/ defines in x86.asm

@@ -49,6 +49,9 @@
 #include "instrlist.h"
 #include "instr.h"
 #include "monitor.h"
+#ifdef SECURITY_AUDIT
+# include "audit.h"
+#endif
 #include <string.h> /* memcpy */
 
 #ifdef DEBUG

@@ -43,6 +43,9 @@
 #include "decode.h"
 #include "disassemble.h"
 #include "decode_fast.h"
+#ifdef SECURITY_AUDIT
+# include "audit.h"
+#endif
 
 #include <string.h> /* memcpy, memset */
 

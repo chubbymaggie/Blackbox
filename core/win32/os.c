@@ -63,7 +63,8 @@
 #include "../native_exec.h"
 
 #ifdef SECURITY_AUDIT
-# include "../x86/instrument.h"
+# include "instrument.h"
+# include "audit.h"
 #endif
 
 #ifdef NOT_DYNAMORIO_CORE_PROPER

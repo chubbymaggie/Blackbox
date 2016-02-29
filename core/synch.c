@@ -41,6 +41,9 @@
 #include "hotpatch.h" /* hotp_only_in_tramp() */
 #include "fragment.h" /* get_at_syscall() */
 #include "fcache.h" /* in_fcache() */
+#ifdef SECURITY_AUDIT
+# include "audit.h"
+#endif
 #include <string.h> /* for memcpy */
 
 extern vm_area_vector_t *fcache_unit_areas; /* from fcache.c */

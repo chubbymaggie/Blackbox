@@ -47,6 +47,9 @@
 #include "synch.h"
 #include "perscache.h"
 #include "native_exec.h"
+#ifdef SECURITY_AUDIT
+# include "audit.h"
+#endif
 #include <string.h> /* for strstr */
 
 #ifdef CLIENT_INTERFACE

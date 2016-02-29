@@ -44,6 +44,9 @@
 #include "aslr.h"
 #include "instrument.h"
 #include "../synch.h"
+#ifdef SECURITY_AUDIT
+# include "audit.h"
+#endif
 
 /* this points to one of the os-version-specific system call # arrays below */
 int *syscalls = NULL;

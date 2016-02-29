@@ -54,6 +54,9 @@
 #ifdef UNIX
 # include "nudge.h"
 #endif
+#ifdef SECURITY_AUDIT
+# include "audit.h"
+#endif
 
 /* FIXME: make these runtime parameters */
 #define INIT_HTABLE_SIZE_SHARED_BB    (DYNAMO_OPTION(coarse_units) ? 5 : 10)

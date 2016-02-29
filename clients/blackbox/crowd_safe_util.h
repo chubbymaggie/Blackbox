@@ -623,9 +623,6 @@ struct crowd_safe_thread_local_t {
     thread_clock_t thread_clock;
     stack_suspicion_t stack_suspicion;
 #endif
-#ifdef LINK_TRACKING
-    void *link_tracker;
-#endif
     return_address_iterator_t *stack_walk;
 };
 
