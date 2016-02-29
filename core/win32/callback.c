@@ -6,18 +6,18 @@
 /*
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
- * 
+ *
  * * Redistributions of source code must retain the above copyright notice,
  *   this list of conditions and the following disclaimer.
- * 
+ *
  * * Redistributions in binary form must reproduce the above copyright notice,
  *   this list of conditions and the following disclaimer in the documentation
  *   and/or other materials provided with the distribution.
- * 
+ *
  * * Neither the name of VMware, Inc. nor the names of its contributors may be
  *   used to endorse or promote products derived from this software without
  *   specific prior written permission.
- * 
+ *
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
  * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
  * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
@@ -70,15 +70,6 @@
 #include <string.h> /* for memcpy */
 #include <windows.h>
 
-#ifdef CROWD_SAFE_INTEGRATION
-# include "../../ext/link-observer/link_observer.h"
-# include "../../ext/link-observer/module_observer.h"
-# include "../../ext/link-observer/indirect_link_observer.h"
-# include "../../ext/link-observer/basic_block_hashtable.h"
-# include "../../ext/link-observer/crowd_safe_util.h"
-# include "../../ext/link-observer/crowd_safe_trace.h"
-#endif
-
 /* forward declarations */
 static dcontext_t * callback_setup(app_pc next_pc);
 static byte * insert_image_entry_trampoline(dcontext_t *dcontext);
@@ -100,7 +91,7 @@ static LPTOP_LEVEL_EXCEPTION_FILTER app_top_handler;
  */
 ALIGN_VAR(4096) static byte interception_code_array[INTERCEPTION_CODE_SIZE];
 
-/* interception information 
+/* interception information
  * if it weren't for syscall trampolines this could be a single page
  * Note: if you add more intercept points, make sure to adjust
  * NUM_INTERCEPT_POINTS below.
@@ -175,7 +166,7 @@ DECLARE_CXTSWPROT_VAR(static mutex_t exception_stack_lock,
 DECLARE_CXTSWPROT_VAR(static mutex_t intercept_hook_lock,
                       INIT_LOCK_FREE(intercept_hook_lock));
 
-/* Only used for Vista, new threads start directly here instead of going 
+/* Only used for Vista, new threads start directly here instead of going
  * through KiUserApcDispatcher first. Isn't in our lib (though is exported
  * on 2k, xp and vista at least) so we get it dynamically. */
 static byte *LdrInitializeThunk = NULL;
@@ -231,7 +222,7 @@ intercept_asynch_common(thread_record_t *tr, bool intercept_unknown)
             SYSLOG_INTERNAL_WARNING("Received asynch event for unknown thread %d", get_thread_id());
             /* try to make everything run rather than assert -- just do
              * this asynch natively, we probably received it for a thread that's
-             * been created but not scheduled?  
+             * been created but not scheduled?
              */
         }
         return false;
@@ -262,7 +253,7 @@ intercept_asynch_for_thread(thread_id_t tid, bool intercept_unknown)
 bool
 intercept_asynch_for_self(bool intercept_unknown)
 {
-    /* To avoid problems with the all_threads_lock required to look 
+    /* To avoid problems with the all_threads_lock required to look
      * up a thread in the thread table, we first see if it has a
      * dcontext, and if so we get the thread_record_t from there.
      * If not, it probably is a native thread and grabbing the lock
@@ -318,7 +309,7 @@ clean call or cxt switch when on dstack but prior to whereami change.
 
 Note: the app registers passed to the handler are restored when going back to
       the app, which means any changes made by the handler will be reflected
-      in the app state; 
+      in the app state;
       FIXME: change handler prototype to make all registers volatile so that the
       compiler doesn't clobber them; for now it is the user's responsibility.
 
@@ -353,8 +344,8 @@ if (!assume_xsp)
     endif
       mov $DSTACK(xcx), xsp
 
-      # now get the app xsp from the dcontext and put it on the dstack; this 
-      # will serve as the app xsp cache and will be used to send the correct 
+      # now get the app xsp from the dcontext and put it on the dstack; this
+      # will serve as the app xsp cache and will be used to send the correct
       # app xsp to the handler and to restore app xsp at exit
     if TEST(SELFPROT_DCONTEXT, dynamo_options.protect_mask)
       mov $MCONTEXT_OFFSET(xcx), xcx
@@ -562,7 +553,7 @@ insert_let_go_cleanup(dcontext_t *dcontext, byte *pc, instrlist_t *ilist,
         /* placeholder so can find 1st of this path */
         first = instrlist_last(ilist);
     }
-    
+
     if (EXIT_DR_HOOK != NULL) {
         /* make sure to use dr_insert_call() rather than a raw OP_call instr,
          * since x64 windows requires 32 bytes of stack space even w/ no args.
@@ -587,7 +578,7 @@ insert_let_go_cleanup(dcontext_t *dcontext, byte *pc, instrlist_t *ilist,
                                    opnd_create_reg(REG_XAX)));
     /* now restore everything */
     insert_pop_all_registers(dcontext, NULL, ilist, NULL, XSP_SZ/*see push_all use*/);
-        
+
     if (action_after == AFTER_INTERCEPT_DYNAMIC_DECISION) {
         /* now that instrs are there, take 1st */
         ASSERT(first != NULL);
@@ -605,7 +596,7 @@ insert_let_go_cleanup(dcontext_t *dcontext, byte *pc, instrlist_t *ilist,
         APP(ilist,
             INSTR_CREATE_pop(dcontext, opnd_create_reg(REG_XCX)));
 
-        /* popa doesn't restore xsp; the handler might have changed it, so 
+        /* popa doesn't restore xsp; the handler might have changed it, so
          * restore it from the app xsp cache, which is now the top of stack.
          */
         APP(ilist, INSTR_CREATE_pop(dcontext, opnd_create_reg(REG_XSP)));
@@ -651,10 +642,10 @@ insert_let_go_cleanup(dcontext_t *dcontext, byte *pc, instrlist_t *ilist,
                                 OPND_CREATE_INTPTR(win32_pid)));
 #endif
     } else {
-        /* popa doesn't restore xsp; the handler might have changed it, so 
+        /* popa doesn't restore xsp; the handler might have changed it, so
          * restore it from the app xsp cache, which is now the top of stack.
          */
-        APP(ilist, INSTR_CREATE_lea(dcontext, opnd_create_reg(REG_XSP), 
+        APP(ilist, INSTR_CREATE_lea(dcontext, opnd_create_reg(REG_XSP),
                                     opnd_create_base_disp(REG_XSP, REG_NULL, 0,
                                                           XSP_SZ, OPSZ_0)));
         APP(ilist, INSTR_CREATE_pop(dcontext, opnd_create_reg(REG_XSP)));
@@ -694,7 +685,7 @@ insert_let_go_cleanup(dcontext_t *dcontext, byte *pc, instrlist_t *ilist,
  * and the number of bytes of the instruction(s) clobbered at the hook point
  * might be different.  If the clobbered bytes are more than 5 bytes, then the
  * return jmp from the landing pad won't be able to reach it.  By placing 8
- * bytes above the landing pad, we give it the extra reachability needed.   
+ * bytes above the landing pad, we give it the extra reachability needed.
  * Also, having the tgt_pc at the top of the landing pad makes it easy to see
  * the disassembly of the whole landing pad while debugging, else there will be
  * jmp and garbage after it.
@@ -723,7 +714,7 @@ emit_landing_pad_code(byte *lpad_buf, const byte *tgt_pc,
 
     res = make_hookable(lpad_buf, LANDING_PAD_SIZE, changed_prot);
     ASSERT(res);
-    
+
 #ifndef X64
     *lpad_buf = JMP_REL32_OPCODE;
     lpad_buf++;
@@ -788,21 +779,21 @@ finalize_landing_pad_code(byte *lpad_buf, bool changed_prot)
  * that we'd need a relocation table mapping old instruction offsets
  * to the newly emitted ones.
  *
- *      As of today only one cti is allowed in a patch region and that too at 
- * the end of it, so the starting location of that cti won't change even if we 
+ *      As of today only one cti is allowed in a patch region and that too at
+ * the end of it, so the starting location of that cti won't change even if we
  * convert and re-relativize it.  This means hot patch control flow changes into
  * the middle of a patch region won't have to worry about using an offset table.
- * 
- *      The current patch region definition doesn't allow ctis to be in the 
- * middle of patch regions.  This means we don't have to worry about 
- * re-relativizing ctis in the middle of a patch region.  However Alex has an 
- * argument about allowing cbrs to be completely inside a patch region as 
- * control flow can never reach the following instruction other than fall 
- * through, i.e., not from outside.  This is a matter for debate, but one 
+ *
+ *      The current patch region definition doesn't allow ctis to be in the
+ * middle of patch regions.  This means we don't have to worry about
+ * re-relativizing ctis in the middle of a patch region.  However Alex has an
+ * argument about allowing cbrs to be completely inside a patch region as
+ * control flow can never reach the following instruction other than fall
+ * through, i.e., not from outside.  This is a matter for debate, but one
  * which will need the ilist & creating the relocation table per patch point.
  */
 static byte *
-copy_app_code(dcontext_t *dcontext, const byte *start_pc, 
+copy_app_code(dcontext_t *dcontext, const byte *start_pc,
               byte *buf, size_t size, instrlist_t *ilist)
 {
     instr_t *instr;
@@ -810,7 +801,7 @@ copy_app_code(dcontext_t *dcontext, const byte *start_pc,
     DEBUG_DECLARE(byte *buf_start = buf;)
     DEBUG_DECLARE(bool size_change = false;)
     ASSERT(dcontext != NULL && start_pc != NULL && buf != NULL);
-    /* Patch region should be at least 5 bytes in length, but no more than 5 
+    /* Patch region should be at least 5 bytes in length, but no more than 5
      * plus the length of the last instruction in the region.
      */
     ASSERT(size >= 5 && size <
@@ -818,10 +809,10 @@ copy_app_code(dcontext_t *dcontext, const byte *start_pc,
 
     /* We have to walk the instr list to lengthen short (8-bit) ctis */
     for (instr = instrlist_first(ilist); instr != NULL; instr = instr_get_next(instr)) {
-        /* For short ctis in the loop to jecxz range, the cti conversion 
-         * will set the target in the raw bits, so the raw bits will be valid.  
-         * For other short ctis, the conversion will invalidate the raw bits, 
-         * so a full encoding is enforced.  For other ctis, the raw bits aren't 
+        /* For short ctis in the loop to jecxz range, the cti conversion
+         * will set the target in the raw bits, so the raw bits will be valid.
+         * For other short ctis, the conversion will invalidate the raw bits,
+         * so a full encoding is enforced.  For other ctis, the raw bits aren't
          * valid for encoding because we are relocating them; so invalidate
          * them explicitly.
          */
@@ -884,12 +875,12 @@ emit_intercept_code(dcontext_t *dcontext, byte *pc, intercept_function_t callee,
     app_pc no_cleanup;
     uint stack_offs = 0;
     IF_DEBUG(bool direct;)
-    
+
     /* AFTER_INTERCEPT_LET_GO_ALT_DYN is used only dynamically to select alternate */
     ASSERT(action_after != AFTER_INTERCEPT_LET_GO_ALT_DYN);
 
     /* alternate_after provided only when possibly using alternate target */
-    ASSERT(alternate_after == NULL || 
+    ASSERT(alternate_after == NULL ||
            action_after == AFTER_INTERCEPT_DYNAMIC_DECISION ||
            action_after == AFTER_INTERCEPT_TAKE_OVER_SINGLE_SHOT);
 
@@ -978,7 +969,7 @@ emit_intercept_code(dcontext_t *dcontext, byte *pc, intercept_function_t callee,
         /* use initstack to avoid any assumptions about app xsp */
         /* first check if we are already on it */
         APP(&ilist, no_local_stack);
-        APP(&ilist, 
+        APP(&ilist,
             INSTR_CREATE_mov_imm(dcontext,
                                  opnd_create_reg(REG_XCX),
                                  OPND_CREATE_INTPTR((ptr_int_t)initstack)));
@@ -1107,7 +1098,7 @@ emit_intercept_code(dcontext_t *dcontext, byte *pc, intercept_function_t callee,
      * DR often only cares about stack alignment for xmm saves.
      * However, it sometimes calls ntdll routines; and for client exception
      * handlers that might call random library routines we really care.
-     * We assume that the kernel will make sure of the stack alignment, 
+     * We assume that the kernel will make sure of the stack alignment,
      * so we use stack_offs to make sure of the stack alignment in the
      * instrumentation.
      */
@@ -1172,7 +1163,7 @@ emit_intercept_code(dcontext_t *dcontext, byte *pc, intercept_function_t callee,
      * argument to the intercept routine.  Fix for case 7597.
      * -- CAUTION -- if app_state_at_intercept_t changes in anyway, this can
      * blow up!  That structure's field's types, order & layout are assumed
-     * here.  These two should change only in synch. 
+     * here.  These two should change only in synch.
      */
     if (parameters_stack_padded()) {
         /* xsp won't have proper value due to stack padding */
@@ -1404,7 +1395,7 @@ unmap_intercept_pc(app_pc original_app_pc)
                 intercept_map->tail = prev;
             }
 
-            HEAP_TYPE_FREE(GLOBAL_DCONTEXT, curr, intercept_map_elem_t, 
+            HEAP_TYPE_FREE(GLOBAL_DCONTEXT, curr, intercept_map_elem_t,
                            ACCT_OTHER, UNPROTECTED);
             /* We don't break b/c we allow multiple entries and in fact
              * we have multiple today: one for displaced app code and
@@ -1414,7 +1405,7 @@ unmap_intercept_pc(app_pc original_app_pc)
             prev = curr;
         curr = next;
     }
-     
+
     mutex_unlock(&map_intercept_pc_lock);
 }
 
@@ -1565,7 +1556,7 @@ emit_resume_jmp(byte *pc, byte *resume_pc, byte *app_pc, byte *xl8_start_pc)
  * and not intercept this call when abort_on_incompatible_hooker is
  * true.
  * FIXME: if we add one more flag we should switch to a single flag enum
- * 
+ *
  * Currently only hotp_only uses app_code_copy_p and alt_exit_tgt_p.
  * These point at their respective locations.  alt_exit_tgt_p is
  * currently NOT aligned for hot patching.
@@ -1640,7 +1631,7 @@ intercept_call(byte *our_pc, byte *tgt_pc, intercept_function_t prof_func,
             instrlist_clear(dcontext, &ilist);
             return NULL;
         }
-        
+
         if (pc == NULL || is_hooked && DYNAMO_OPTION(hook_conflict) == HOOKED_TRAMPOLINE_DIE) {
             FATAL_USAGE_ERROR(TAMPERED_NTDLL, 2, get_application_name(), get_application_pid());
         }
@@ -1673,8 +1664,8 @@ intercept_call(byte *our_pc, byte *tgt_pc, intercept_function_t prof_func,
      * (won't be executed, original code will jump to after it)
      * We do this for convenience of un-intercepting, so we don't have to
      * record offset of the copy in the middle of the interception code
-     * CAUTION: storing the exact copy of the 5 bytes from the app image at 
-     *          the start of the trampoline is assumed in hotp_only for 
+     * CAUTION: storing the exact copy of the 5 bytes from the app image at
+     *          the start of the trampoline is assumed in hotp_only for
      *          case 7279 - change only in synch.
      */
     memcpy(pc, tgt_pc, 5);
@@ -1703,19 +1694,19 @@ intercept_call(byte *our_pc, byte *tgt_pc, intercept_function_t prof_func,
                              assume_xsp, assume_xsp, action_after,
                              (action_after ==
                               AFTER_INTERCEPT_TAKE_OVER_SINGLE_SHOT) ?
-                                 tgt_pc : 
+                                 tgt_pc :
                                  ((alt_exit_tgt_p != NULL) ?
                                      CURRENTLY_UNKNOWN :
                                      NULL),
                              alt_exit_tgt_p);
 
-    /* If we are TAKE_OVER_SINGLE_SHOT then the handler routine has promised to 
+    /* If we are TAKE_OVER_SINGLE_SHOT then the handler routine has promised to
      * restore the original code and supply the appropriate continuation address.
      * As such there is no need for us to copy the code here as we will never use it.
      * (Note not copying the code also gives us a quick fix for the Vista image entry
      * problem in PR 293452 from not yet handling non-reaching cits in hook displaced
-     * code PR 268988). FIXME - not having a displaced copy to decode breaks the 
-     * redirection deoode_as_bb() (but not other deocde routines) uses to hide the 
+     * code PR 268988). FIXME - not having a displaced copy to decode breaks the
+     * redirection deoode_as_bb() (but not other deocde routines) uses to hide the
      * hook from the client (see PR 293465 for other reasons we need a better solution
      * to that problem). */
     if (action_after != AFTER_INTERCEPT_TAKE_OVER_SINGLE_SHOT) {
@@ -1723,7 +1714,7 @@ intercept_call(byte *our_pc, byte *tgt_pc, intercept_function_t prof_func,
         map_intercept_pc_to_app_pc
             (displaced_app_pc, tgt_pc, size + JMP_LONG_LENGTH /* include jmp back */,
              size);
-        
+
         /* Copy original instructions to our version, re-relativizing where necessary */
         if (app_code_copy_p != NULL)
             *app_code_copy_p = displaced_app_pc;
@@ -1751,8 +1742,8 @@ intercept_call(byte *our_pc, byte *tgt_pc, intercept_function_t prof_func,
         }
     }
 
-#ifdef CROWD_SAFE_INTEGRATION
-    notify_dynamorio_interception(tgt_pc, tgt_pc + size);
+#ifdef SECURITY_AUDIT
+    audit_intercept(tgt_pc, tgt_pc + size);
 #endif
 
     /* Must return to the displaced app code in the landing pad */
@@ -1806,7 +1797,7 @@ un_intercept_call(byte *our_pc, byte *tgt_pc)
     make_unhookable(tgt_pc, JMP_REL32_SIZE, changed_prot);
 
     /* Redirect the first jump in the landing pad to the hooked address (which we just
-     * restored above) - in case someone has chained with our hook.  
+     * restored above) - in case someone has chained with our hook.
      */
     ok = make_hookable(lpad_entry, JMP_SIZE, &changed_prot);
     ASSERT(ok);
@@ -1823,7 +1814,7 @@ un_intercept_call(byte *our_pc, byte *tgt_pc)
         byte *pc = tgt_pc;
         LOG(GLOBAL, LOG_ASYNCH, 3, "after un-intercepting:\n");
         do {
-            /* Use GLOBAL_DCONTEXT here since we may have already 
+            /* Use GLOBAL_DCONTEXT here since we may have already
              * called dynamo_thread_exit()
              */
             pc = disassemble_with_bytes(GLOBAL_DCONTEXT, pc, main_logfile);
@@ -1974,13 +1965,13 @@ clean_syscall_wrapper(byte *nt_wrapper, int sys_enum)
     }
 #endif /* X64 */
 #undef APP
-    
+
     /* we've seen 3 different ways of hooking syscall wrappers :
      * 1) jmp overwriting first 5 bytes (mov eax, sysnum), most common.
      * 2) jmp overwriting second 5 bytes (certain versions of Sygate)
      * 3) overwriting first 8 bytes with push eax (x3) then jmp (Spyware Doctor 9288, A^2
      *      anti-spyware 10414). */
-    
+
     /* NOTE - we could finish the walk whether hooked or not, but not much point and
      * I don't fully trust are decode routine w/ junk input (if for ex. hook doesn't end
      * on an instr boundary). */
@@ -2003,7 +1994,7 @@ clean_syscall_wrapper(byte *nt_wrapper, int sys_enum)
             break;
         }
     }
-    
+
     LOG(GLOBAL, LOG_SYSCALLS, hooked ? 1U : 2U,
         "Syscall wrapper @ "PFX" syscall_num=0x%03x%s hooked.\n",
         nt_wrapper, sysnum, hooked ? "" : " not");
@@ -2095,8 +2086,8 @@ exit_clean_syscall_wrapper:
 static byte *
 syscall_wrapper_ilist(dcontext_t *dcontext,
                       instrlist_t *ilist, /* IN/OUT */
-                      byte **ptgt_pc /* IN/OUT */, 
-                      void *callee_arg, 
+                      byte **ptgt_pc /* IN/OUT */,
+                      void *callee_arg,
                       byte *fpo_stack_adjustment, /* OUT OPTIONAL */
                       byte **ret_pc /* OUT */)
 {
@@ -2109,7 +2100,7 @@ syscall_wrapper_ilist(dcontext_t *dcontext,
 
     pc = *ptgt_pc;
     /* we need 5 bytes for a jump, and we assume that the first instr
-     * (2nd instr for x64, where we skip the 1st) is a 5-byte mov immed! 
+     * (2nd instr for x64, where we skip the 1st) is a 5-byte mov immed!
      */
     instr = instr_create(dcontext);
     pc = decode(dcontext, pc, instr);
@@ -2146,7 +2137,7 @@ syscall_wrapper_ilist(dcontext_t *dcontext,
                                   get_application_pid());
             }
             if (instr_get_opcode(instr) == OP_call) {
-                LOG(GLOBAL, LOG_ASYNCH, 2, 
+                LOG(GLOBAL, LOG_ASYNCH, 2,
                     "intercept_syscall_wrapper: mangling hooked call at "PFX"\n", pc);
                 /* replace the call w/ a push/jmp hoping this will
                  * eventually return to us unless the hooker decides
@@ -2169,7 +2160,7 @@ syscall_wrapper_ilist(dcontext_t *dcontext,
                 }
 #endif
                 instrlist_append(ilist,
-                                 INSTR_CREATE_jmp(dcontext, 
+                                 INSTR_CREATE_jmp(dcontext,
                                                   opnd_create_pc(opnd_get_pc(instr_get_target(instr)))));
                 /* skip original instruction */
                 instr_destroy(dcontext, instr);
@@ -2193,18 +2184,18 @@ syscall_wrapper_ilist(dcontext_t *dcontext,
         } else if (DYNAMO_OPTION(native_exec_hook_conflict) == HOOKED_TRAMPOLINE_SQUASH) {
             SYSLOG_INTERNAL_WARNING_ONCE("intercept_syscall_wrapper: "
                                          "squashing hooked syscall at "PFX, pc);
-            LOG(GLOBAL, LOG_ASYNCH, 2, 
-                "intercept_syscall_wrapper: squashing hooked syscall %02x at "PFX"\n", 
+            LOG(GLOBAL, LOG_ASYNCH, 2,
+                "intercept_syscall_wrapper: squashing hooked syscall %02x at "PFX"\n",
                 native_sys_num, pc);
 #ifdef X64
             /* in this case we put our hook at the 1st instr */
             instrlist_append(ilist,
                              INSTR_CREATE_mov_ld(dcontext, opnd_create_reg(REG_R10),
                                                  opnd_create_reg(REG_RCX)));
-#endif            
+#endif
             /* we normally ASSERT that 1st instr is always mov imm -> eax */
             instrlist_append(ilist,
-                             INSTR_CREATE_mov_imm(dcontext, opnd_create_reg(REG_EAX), 
+                             INSTR_CREATE_mov_imm(dcontext, opnd_create_reg(REG_EAX),
                                                   OPND_CREATE_INT32(native_sys_num)));
             /* FIXME: even if we detach we don't restore the original
              * values, since what we have here should be good enough
@@ -2213,7 +2204,7 @@ syscall_wrapper_ilist(dcontext_t *dcontext,
             instr_destroy(dcontext, instr);
         } else if (DYNAMO_OPTION(native_exec_hook_conflict) == HOOKED_TRAMPOLINE_HOOK_DEEPER) {
             /* move our hook one instruction deeper assuming hooker will
-             * return to right after the hook, verify that's an 
+             * return to right after the hook, verify that's an
              * instruction boundary */
 #ifdef X64
             /* not much room for two hooks before the syscall; we don't support
@@ -2258,7 +2249,7 @@ syscall_wrapper_ilist(dcontext_t *dcontext,
         /* normally a mov eax, native_sys_num */
         ASSERT(instr_get_opcode(instr) == OP_mov_imm);
         ASSERT(opnd_get_immed_int(instr_get_src(instr, 0)) == native_sys_num);
-        LOG(GLOBAL, LOG_ASYNCH, 3, "intercept_syscall_wrapper: hooked syscall %02x at "PFX"\n", 
+        LOG(GLOBAL, LOG_ASYNCH, 3, "intercept_syscall_wrapper: hooked syscall %02x at "PFX"\n",
             native_sys_num, pc);
         /* append instruction (non-CTI) */
         instrlist_append(ilist, instr);
@@ -2453,7 +2444,7 @@ syscall_wrapper_ilist(dcontext_t *dcontext,
              * for it being native. */
             hook_return_instr = create_syscall_instr(dcontext);
             after_hook_target = *ret_pc;
-            ASSERT(DYNAMO_OPTION(native_exec_hook_conflict) == 
+            ASSERT(DYNAMO_OPTION(native_exec_hook_conflict) ==
                    HOOKED_TRAMPOLINE_HOOK_DEEPER);
         } else {
             /* point after_hook_target to int 2e */
@@ -2466,7 +2457,7 @@ syscall_wrapper_ilist(dcontext_t *dcontext,
 }
 
 byte *
-intercept_syscall_wrapper(byte **ptgt_pc /* IN/OUT */, 
+intercept_syscall_wrapper(byte **ptgt_pc /* IN/OUT */,
                           intercept_function_t prof_func,
                           void *callee_arg, after_intercept_action_t action_after,
                           app_pc *skip_syscall_pc /* OUT */,
@@ -2626,7 +2617,7 @@ insert_trampoline(byte *tgt_pc, intercept_function_t prof_func,
 
     /* FIXME: worry about inserting trampoline across bb boundaries? */
     interception_cur_pc = intercept_call(interception_cur_pc, tgt_pc, prof_func, callee_arg,
-                                         assume_xsp, action_after, 
+                                         assume_xsp, action_after,
                                          false, /* need the trampoline at all costs */
                                          cti_safe_to_ignore, NULL, NULL);
     /* FIXME: we assume early intercept_call failures are ok to
@@ -2775,7 +2766,7 @@ wipe_out_ntdll()
     get_list_of_threads(&threads, &num_threads);
     for (i=0; i<num_threads; i++) {
         if (threads[i]->id != get_thread_id()) {
-            LOG(GLOBAL, LOG_ASYNCH, 1, "Suspending thread %d == "PFX"\n", 
+            LOG(GLOBAL, LOG_ASYNCH, 1, "Suspending thread %d == "PFX"\n",
                 tr->id, tr->handle);
             SuspendThread(threads[i]->handle);
         }
@@ -2844,7 +2835,7 @@ asynch_take_over(app_state_at_intercept_t *state)
         dcontext = get_thread_private_dcontext();
         ASSERT(dcontext->initialized);
         /* case 9347 we want to let go after image entry point */
-        if (RUNNING_WITHOUT_CODE_CACHE() 
+        if (RUNNING_WITHOUT_CODE_CACHE()
             && dcontext->next_tag == BACK_TO_NATIVE_AFTER_SYSCALL
             && state->start_pc == image_entry_pc) {
             ASSERT(dcontext->native_exec_postsyscall == image_entry_pc);
@@ -2904,21 +2895,21 @@ intercept_new_thread(CONTEXT *cxt)
     priv_mcontext_t mc;
     /* init apc, check init_apc_go_native to sync w/detach */
     if (init_apc_go_native) {
-        /* need to wait after checking _go_native to avoid a thread 
+        /* need to wait after checking _go_native to avoid a thread
          * going native to early because of races between setting
          * _go_native and _pause */
         if (init_apc_go_native_pause) {
-            /* FIXME : this along with any other logging in this 
-             * method could potentially be race condition with detach 
+            /* FIXME : this along with any other logging in this
+             * method could potentially be race condition with detach
              * cleanup, though is unlikely */
-            LOG(GLOBAL, LOG_ALL, 2, 
+            LOG(GLOBAL, LOG_ALL, 2,
                 "Thread waiting at init_apc for detach to finish\n");
         }
         while (init_apc_go_native_pause) {
             os_thread_yield();
         }
         /* just return, FIXME : see concerns in detach_helper about
-         * getting to native code before the interception_code is 
+         * getting to native code before the interception_code is
          * freed and getting out of here before the dll is unloaded
          */
 # if 0 /* this is not a dynamo controlled thread! */
@@ -3037,10 +3028,10 @@ intercept_new_thread(CONTEXT *cxt)
          * On vista it's the same except cxt->Xip is set to ntdll!RtlUserThreadStart
          * (which is exported in ntdll.dll) by the kernel.
          *
-         * kernel32!BaseProcessStartThunk, or kernel32!BaseThreadStartThunk 
-         * on all versions I've tested start with  
+         * kernel32!BaseProcessStartThunk, or kernel32!BaseThreadStartThunk
+         * on all versions I've tested start with
          * 0xed33  xor ebp,ebp
-         * 
+         *
          * Note, of course, that direct NtCreateThread calls
          * can go anywhere they want (including on Vista).  For example toolhelp
          * uses NTDLL!RtlpQueryProcessDebugInformationRemote
@@ -3070,7 +3061,7 @@ intercept_new_thread(CONTEXT *cxt)
             LOG(THREAD_GET, LOG_THREADS, 2,
                 "Symbol information for thunk address %s\n", sym_buf);
         });
-        
+
         /* start address should be set at thread initialization */
         if (dcontext->win32_start_addr == (app_pc)cxt->THREAD_START_ARG) {
             /* case 10965/PR 215400: WOW64 & x64 query returns arg for some reason */
@@ -3082,8 +3073,8 @@ intercept_new_thread(CONTEXT *cxt)
         ASSERT(dcontext->win32_start_addr == (app_pc)cxt->THREAD_START_ADDR);
 
 #ifdef PROGRAM_SHEPHERDING
-        /* We expect target address (xip) to be on our executable list 
-         * (is usually one of the start thunks). */ 
+        /* We expect target address (xip) to be on our executable list
+         * (is usually one of the start thunks). */
         ASSERT_CURIOSITY(executable_vm_area_overlap(thunk_xip, thunk_xip+2, false));
         /* On vista+ it appears all new threads target RtlUserThreadStart
          * (the kernel sets in in NtCreateThreadEx). Thread created via the legacy
@@ -3102,7 +3093,7 @@ intercept_new_thread(CONTEXT *cxt)
              * eax.  However we don't want to apply the policy to the random
              * value in eax if the thread isn't targeting a start thunk (such
              * as injected toolhelp [RtlpQueryProcessDebugInformationRemote]
-             * or debugger threads).  For Vista we can check that xip = 
+             * or debugger threads).  For Vista we can check that xip =
              * RtlUserThreadStart, but the kernel32 thunks used pre Vista
              * aren't exported so as a sanity check for those we check if
              * the first few bytes of xip match the kernel32 start thunks.
@@ -3135,8 +3126,8 @@ intercept_new_thread(CONTEXT *cxt)
         }
 #endif /* PROGRAM_SHEPHERDING */
 #ifdef HOT_PATCHING_INTERFACE
-        /* For hotp_only, this is where newly created threads should 
-         * be let go native, i.e., do the thread_policy enforcement. 
+        /* For hotp_only, this is where newly created threads should
+         * be let go native, i.e., do the thread_policy enforcement.
          */
         if (DYNAMO_OPTION(hotp_only))
             return true /* exit intercept function and let go */;
@@ -3151,7 +3142,7 @@ intercept_new_thread(CONTEXT *cxt)
  * New Threads
  * On os_versions prior to Vista new threads start KiUserApcDispatcher with an
  * APC to LdrInitializeThunk.  We catch those with our KiUserApcDispatcher
- * hook. On Vista new threads skip the dispatcher and go directly to 
+ * hook. On Vista new threads skip the dispatcher and go directly to
  * LdrInitializeThunk (stack is similar to APC, i.e. does an NtContinue to
  * go on) so we need to hook there to catch new threads.
  */
@@ -3287,20 +3278,20 @@ cb stack when an exception will abandon that cb frame.
  * APC
  *
  * ASSUMPTIONS:
- *    1) *(esp+0x0) == PKNORMAL_ROUTINE ApcRoutine 
+ *    1) *(esp+0x0) == PKNORMAL_ROUTINE ApcRoutine
  *       (IN PVOID NormalContext, IN PVOID SystemArgument1, IN PVOID SystemArgument2)
- *      call* native target 
+ *      call* native target
  *      The next three arguments on the stack are just passed through
- *      to this function, and are the arguments passed by 
+ *      to this function, and are the arguments passed by
  *      NtQueueApcThread(thread, ApcRoutine, ApcContext, Argument1, Argument2)
  *
  *      On XP SP2 user mode APCs target kernel32!BaseDispatchAPC,
  *      and the following arguments have been observed to be:
- *    2') *(esp+0x4) == ApcContext 
+ *    2') *(esp+0x4) == ApcContext
  *        call* Win32 target PAPCFUNC for user mode APCs
  *    FIXME:  need to check the other platforms - it is completely
  *      up to the caller
- *    3') *(esp+0x8) == Argument1 
+ *    3') *(esp+0x8) == Argument1
  *        win32_APC_argument
  *    4') *(esp+0xc) == Argument2
  *      on XP SP2 for BaseDispatchAPC, seems to be SXS activation context related
@@ -3340,14 +3331,14 @@ intercept_apc(app_state_at_intercept_t *state)
         /* won't be re-protected until dispatch->fcache */
 
         RSTATS_INC(num_APCs);
-        
+
 #ifdef DEBUG
         /* retrieve info on this APC call */
         apc_target = *((app_pc *)(state->mc.xsp + APC_TARGET_XSP_OFFS));
         /* FIXME: invalid app parameters would have been caught already, right? */
         ASSERT(apc_target != 0 && cxt != NULL);
         LOG(GLOBAL, LOG_ASYNCH, 2,
-            "ASYNCH intercepted apc: thread=%d, apc pc="PFX", cont pc="PFX"\n", 
+            "ASYNCH intercepted apc: thread=%d, apc pc="PFX", cont pc="PFX"\n",
             get_thread_id(), apc_target, cxt->CXT_XIP);
 #endif
 
@@ -3357,7 +3348,7 @@ intercept_apc(app_state_at_intercept_t *state)
             LOG(GLOBAL, LOG_ASYNCH|LOG_THREADS, 2,
                 "APC thread was not initialized!\n");
             LOG(GLOBAL, LOG_ASYNCH, 1,
-                "ASYNCH intercepted thread init apc: apc pc="PFX", cont pc="PFX"\n", 
+                "ASYNCH intercepted thread init apc: apc pc="PFX", cont pc="PFX"\n",
                 apc_target, cxt->CXT_XIP);
             if (intercept_new_thread(cxt))
                 return AFTER_INTERCEPT_LET_GO;
@@ -3366,7 +3357,7 @@ intercept_apc(app_state_at_intercept_t *state)
             ASSERT(get_thread_private_dcontext()->whereami == WHERE_FCACHE);
             LOG(GLOBAL, LOG_ASYNCH|LOG_THREADS, 2, "APC thread was already initialized!\n");
             LOG(THREAD_GET, LOG_ASYNCH, 2,
-                "ASYNCH intercepted non-init apc: apc pc="PFX", cont pc="PFX"\n", 
+                "ASYNCH intercepted non-init apc: apc pc="PFX", cont pc="PFX"\n",
                 apc_target, cxt->CXT_XIP);
 
 #ifdef PROGRAM_SHEPHERDING
@@ -3374,7 +3365,7 @@ intercept_apc(app_state_at_intercept_t *state)
             if (TEST(OPTION_ENABLED, DYNAMO_OPTION(apc_policy))) {
                 apc_thread_policy_helper((app_pc *)(state->mc.xsp + APC_TARGET_XSP_OFFS),
                                          DYNAMO_OPTION(apc_policy),
-                                         APC_TARGET_NATIVE 
+                                         APC_TARGET_NATIVE
                                          /* NtQueueApcThread, likely from kernel mode */);
                 /* case: 9024 test WINDOWS APC as well
                  * FIXME: we may want to attempt to give an exemption
@@ -3507,7 +3498,7 @@ intercept_apc(app_state_at_intercept_t *state)
             /* our internal nudge creates a thread that directly targets
              * generic_nudge_target() */
 #ifdef CLIENT_SIDELINE
-            ASSERT(!is_dynamo_address((app_pc)cxt->CXT_XIP) || 
+            ASSERT(!is_dynamo_address((app_pc)cxt->CXT_XIP) ||
                    cxt->CXT_XIP == (ptr_uint_t)generic_nudge_target
                    IF_CLIENT_INTERFACE(|| cxt->CXT_XIP==(ptr_uint_t)client_thread_target));
 #else
@@ -3552,7 +3543,7 @@ check_apc_context_offset(byte *apc_entry)
            opnd_get_base(instr_get_src(&instr, 0)) == REG_XSP &&
            opnd_get_index(instr_get_src(&instr, 0)) == REG_NULL);
 #else
-    /* In Win 2003 SP1, the context offset used is 0xc, and DR works with it;  
+    /* In Win 2003 SP1, the context offset used is 0xc, and DR works with it;
      * the first lea used there has an offset of 0x2dc, not 0xc.  See case 3522.
      */
     ASSERT(instr_get_opcode(&instr) == OP_lea &&
@@ -3596,19 +3587,19 @@ intercept_nt_continue(CONTEXT *cxt, int flag)
 {
     if (intercept_asynch_for_self(false/*no unknown threads*/)) {
         dcontext_t *dcontext = get_thread_private_dcontext();
-        
+
         LOG(THREAD, LOG_ASYNCH, 2,
             "ASYNCH intercept_nt_continue in thread %d, xip="PFX"\n",
             get_thread_id(), cxt->CXT_XIP);
 
         LOG(THREAD, LOG_ASYNCH, 3, "target context:\n");
         DOLOG(3, LOG_ASYNCH, { dump_context_info(cxt, THREAD, true); });
-        
+
         if (is_building_trace(dcontext)) {
             LOG(THREAD, LOG_ASYNCH, 2, "intercept_nt_continue: squashing old trace\n");
             trace_abort(dcontext);
         }
-       
+
         if (get_syscall_method() == SYSCALL_METHOD_SYSENTER &&
             cxt->CXT_XIP == (ptr_uint_t) vsyscall_after_syscall) {
             /* We need to go back to after shared/do syscall, to do post syscall and other
@@ -3651,15 +3642,15 @@ intercept_nt_continue(CONTEXT *cxt, int flag)
                 *((app_pc *)cxt->CXT_XSP) = (app_pc) after_do_syscall_code(dcontext);
             }
         } else if (!in_fcache((cache_pc)cxt->CXT_XIP) &&
-                   /* FIXME : currently internal nudges (detach on violation 
+                   /* FIXME : currently internal nudges (detach on violation
                     * for ex.) create a thread that directly targets the
                     * generic_nudge_target() function. Therefore, we have to check for
                     * it here. */
                    (!is_dynamo_address((cache_pc)cxt->CXT_XIP) ||
                     cxt->CXT_XIP == (ptr_uint_t)generic_nudge_target) &&
                    !in_generated_routine(dcontext, (cache_pc)cxt->CXT_XIP)) {
-            /* Going to non-code-cache address, need to make sure get control back 
-             * Use next_tag slot to hold original Xip 
+            /* Going to non-code-cache address, need to make sure get control back
+             * Use next_tag slot to hold original Xip
              */
             LOG(THREAD, LOG_ASYNCH, 2,
                 "\txip="PFX" not in fcache, intercepting at "PFX"\n",
@@ -3714,14 +3705,14 @@ intercept_nt_setcontext(dcontext_t *dcontext, CONTEXT *cxt)
         LOG(THREAD, LOG_ASYNCH, 2, "intercept_nt_setcontext: squashing old trace\n");
         trace_abort(dcontext);
     }
-        
+
     /* Yes, we use the same x86.asm and x86_code.c procedures as
      * NtContinue: nt_continue_dynamo_start and nt_continue_start_setup
      */
     if (!in_fcache((cache_pc)cxt->CXT_XIP) &&
         !in_generated_routine(dcontext, (cache_pc)cxt->CXT_XIP)) {
-        /* Going to non-code-cache address, need to make sure get control back 
-         * Use next_tag slot to hold original Xip 
+        /* Going to non-code-cache address, need to make sure get control back
+         * Use next_tag slot to hold original Xip
          */
         LOG(THREAD, LOG_ASYNCH, 1,
             "intercept_nt_setcontext: xip="PFX" not in fcache, intercepting\n",
@@ -3734,7 +3725,7 @@ intercept_nt_setcontext(dcontext_t *dcontext, CONTEXT *cxt)
          * entry when entered from dispatch (we're called from pre_syscall, prior to entering cache)
          */
         dcontext->asynch_target = (app_pc) cxt->CXT_XIP;
-        /* Point Xip to allow dynamo to retain control 
+        /* Point Xip to allow dynamo to retain control
          * FIXME: w/ stateless handling here, can point at fcache_return
          * like signals do for better performance?
          */
@@ -3753,14 +3744,14 @@ intercept_nt_setcontext(dcontext_t *dcontext, CONTEXT *cxt)
 
 /****************************************************************************
  * EXCEPTIONS
- * 
+ *
  */
 
 #ifdef INTERCEPT_TOP_LEVEL_EXCEPTIONS
-/* top-level exception handler 
+/* top-level exception handler
  * currently we don't need this, so it's not operational
  * to make operational, add this to callback_init:
- *   app_top_handler = 
+ *   app_top_handler =
  *     SetUnhandledExceptionFilter((LPTOP_LEVEL_EXCEPTION_FILTER) our_top_handler);
  * also need to intercept the app calling SetUnhandledExceptionFilter, so need
  * to investigate whether it turns into syscall RtlUnhandledExceptionFilter
@@ -3831,7 +3822,7 @@ found_modified_code(dcontext_t *dcontext, EXCEPTION_RECORD *pExcptRec,
         LOG(THREAD, LOG_ASYNCH, 2,
             "found_modified_code: native/app "PFX"\n", instr_cache_pc);
         /* for !takeover: assumption: native pc -- FIXME: vs
-         * thread-noasynch general usage? 
+         * thread-noasynch general usage?
          */
         ASSERT(!in_generated_routine(dcontext, instr_cache_pc) &&
                !in_fcache(instr_cache_pc));
@@ -3895,14 +3886,14 @@ found_modified_code(dcontext_t *dcontext, EXCEPTION_RECORD *pExcptRec,
                                      "code "PFX, target);
         LOG(THREAD, LOG_ASYNCH, 2, "app tried to write to pretend-writable %s code "
             PFX"\n",
-            system_overlap ? "system" : (patch_module_overlap ? "patch module" : "DR"), 
+            system_overlap ? "system" : (patch_module_overlap ? "patch module" : "DR"),
             target);
-            
+
         DOSTATS({if (system_overlap)
             STATS_INC(app_modify_ntdll_writes);
         else if (patch_module_overlap)
             STATS_INC(app_modify_patch_module_writes);
-        else 
+        else
             STATS_INC(app_modify_DR_writes);
         });
         /* if there are more than a handful of writes we're dealing not with a
@@ -4018,12 +4009,12 @@ found_modified_code(dcontext_t *dcontext, EXCEPTION_RECORD *pExcptRec,
 
         if (!skip) {
             next_pc = handle_modified_code(dcontext, instr_cache_pc, translated_pc, target, f);
-#ifdef CROWD_SAFE_INTEGRATION
+#ifdef SECURITY_AUDIT
             if (next_pc != NULL) {
                 CS_DET("Code modification trap: code at "PX" written by "PX". Resuming at "PX" on thread 0x%x\n",
                     target, f->tag, next_pc, current_thread_id());
 
-                notify_code_modification(dcontext, f, next_pc, target, write_size);
+                audit_code_modification(dcontext, f, next_pc, target, write_size);
             }
 #endif
         }
@@ -4112,12 +4103,12 @@ check_for_modified_code(dcontext_t *dcontext, EXCEPTION_RECORD *pExcptRec,
              * o/w we have to flush the written part outside of emulate areas.
              */
             /* FIXME: case 7492: reported target may be in the middle of the write! */
-            emulate_write = 
+            emulate_write =
                 vmvector_overlap(emulate_write_areas, target, target+write_size) &&
                 !executable_vm_area_overlap(target, target+write_size, false/*no lock*/);
         }
         if (was_executable_area_writable(target) || emulate_write ||
-            ((DYNAMO_OPTION(handle_DR_modify) == DR_MODIFY_NOP || 
+            ((DYNAMO_OPTION(handle_DR_modify) == DR_MODIFY_NOP ||
               DYNAMO_OPTION(handle_ntdll_modify) == DR_MODIFY_NOP) &&
              /* FIXME: should pass written-to range and not just single target */
              is_pretend_writable_address(target))) {
@@ -4183,7 +4174,7 @@ check_for_modified_code(dcontext_t *dcontext, EXCEPTION_RECORD *pExcptRec,
                 LOG(THREAD, LOG_VMAREAS, 1,
                     "non-code written by app pc "PFX" from bb %s:\n",
                     translated_pc, buf);
-                DOLOG(1, LOG_VMAREAS, { 
+                DOLOG(1, LOG_VMAREAS, {
                     disassemble_app_bb(dcontext, translated_pc, THREAD); });
                 LOG(THREAD, LOG_ASYNCH, 1,
                     "Making "PFX"-"PFX" writable\n", base, base + size);
@@ -4223,7 +4214,7 @@ get_exception_list()
 /* Used as a first level check for handler integrity before throwing an exception. */
 /* These checks are best effort and following through a handler may
    still result in subsequent violations of our policies,
-   e.g. attacked handler can point to a valid RET that will fail our checks later. 
+   e.g. attacked handler can point to a valid RET that will fail our checks later.
 */
 /* returns depth so that can caller can decide whether
     it is worth throwing an exception if anyone would be there to catch it
@@ -4239,7 +4230,7 @@ exception_frame_chain_depth(dcontext_t *dcontext)
     app_pc stack_base, stack_top;
     get_stack_bounds(dcontext, &stack_base, &stack_top);
 
-    LOG(THREAD_GET, LOG_ASYNCH, 2, "ASYNCH exception_frame_chain_depth head: "PFX"\n", 
+    LOG(THREAD_GET, LOG_ASYNCH, 2, "ASYNCH exception_frame_chain_depth head: "PFX"\n",
         pexcrec);
 
     for (; (EXCEPTION_REGISTRATION*)PTR_UINT_MINUS_1 != pexcrec;
@@ -4250,33 +4241,33 @@ exception_frame_chain_depth(dcontext_t *dcontext)
         }
         /* each memory location should be readable (we don't want to die while checking) */
         if (!is_readable_without_exception((app_pc)pexcrec, sizeof(EXCEPTION_REGISTRATION))) /* heavy weight check */ {
-            LOG(THREAD_GET, LOG_ASYNCH, 1, 
+            LOG(THREAD_GET, LOG_ASYNCH, 1,
                 "ASYNCH exception_frame_chain_depth "PFX" invalid! "
                 "possibly under attack\n", pexcrec);
             return -1;
         }
-        LOG(THREAD_GET, LOG_ASYNCH, 2, 
+        LOG(THREAD_GET, LOG_ASYNCH, 2,
             "ASYNCH exception_frame_chain_depth[%d] "PFX", handler: "PFX
             ", prev: "PFX"\n", depth, pexcrec, pexcrec->handler, pexcrec->prev);
         /* prev address should be higher in memory than current */
         if (pexcrec->prev <= pexcrec) {
-            LOG(THREAD_GET, LOG_ASYNCH, 1, 
+            LOG(THREAD_GET, LOG_ASYNCH, 1,
                 "WARNING: ASYNCH invalid chain - not strictly up on the stack\n");
             return -1;
         }
         /* check against stack limits */
         if ((stack_base > (app_pc)pexcrec)
             || (stack_top < (app_pc)pexcrec + sizeof(EXCEPTION_REGISTRATION))) {
-            LOG(THREAD_GET, LOG_ASYNCH, 1, 
+            LOG(THREAD_GET, LOG_ASYNCH, 1,
                 "WARNING: ASYNCH invalid chain - "PFX" not on 'official' stack "
                 PFX"-"PFX"\n", pexcrec, stack_base, stack_top);
             return -1;
         }
 
-        /* FIXME: the handler pc should pass the code origins check -- 
+        /* FIXME: the handler pc should pass the code origins check --
            it is possible that we have failed on it to begin with
            - check_origins_helper() unfortunately has side effects that we may not want..)
-           and furthermore we may be coming from there - need to restructure that code 
+           and furthermore we may be coming from there - need to restructure that code
            we want a quick check with no action taken there - something like
            check_thread_vm_area(dcontext, pexcrec->handler, NULL, NULL)
            or maybe a variant of check_origins_helper(dcontext, pexcrec->handler, ...)
@@ -4416,16 +4407,16 @@ exception_access_violation_type(ptr_uint_t code)
 static void
 dump_exception_info(EXCEPTION_RECORD* exception, CONTEXT *context)
 {
-    LOG(THREAD_GET, LOG_ASYNCH, 2, 
+    LOG(THREAD_GET, LOG_ASYNCH, 2,
         "\texception code = "PFX", ExceptionFlags="PFX"\n\trecord="PFX", params=%d\n",
         exception->ExceptionCode,
         exception->ExceptionFlags,
         exception->ExceptionRecord, /* follow if non NULL */
         exception->NumberParameters);
     if (exception->ExceptionCode == EXCEPTION_ACCESS_VIOLATION) {
-        LOG(THREAD_GET, LOG_ASYNCH, 2, 
+        LOG(THREAD_GET, LOG_ASYNCH, 2,
             "\tPC "PFX" tried to %s address "PFX"\n",
-            exception->ExceptionAddress, 
+            exception->ExceptionAddress,
             exception_access_violation_type(exception->ExceptionInformation[0]),
             exception->ExceptionInformation[1]);
     }
@@ -4444,7 +4435,7 @@ dump_exception_frames()
     // 0xFFFFFFFF indicates the end of list
     while ((EXCEPTION_REGISTRATION*)PTR_UINT_MINUS_1 != pexcrec) {
         if (!is_readable_without_exception((app_pc)pexcrec, sizeof(EXCEPTION_REGISTRATION))) /* heavy weight check */ {
-            LOG(THREAD_GET, LOG_ASYNCH, 1, 
+            LOG(THREAD_GET, LOG_ASYNCH, 1,
                 "ASYNCH dump_exception_frames "PFX" invalid! possibly corrupt\n",
                 pexcrec);
             return;
@@ -4459,7 +4450,7 @@ dump_exception_frames()
                 pexcrec, pexcrec->handler, symbolbuf,
                 pexcrec->prev);
         });
-        
+
         pexcrec = pexcrec->prev;
         if (depth++ > 100) {
             LOG(THREAD_GET, LOG_ASYNCH, 2,
@@ -4480,7 +4471,7 @@ typedef struct scopetable_entry_t {
     PVOID lpfnFilter;
     PVOID lpfnHandler;
 } scopetable_entry_t;
- 
+
 /* The extended exception frame used by Visual C++ */
 typedef struct _vc_exception_registration_t
 {
@@ -4492,7 +4483,7 @@ typedef struct _vc_exception_registration_t
 
 #ifdef DEBUG
 /* display the extended exception frame used by Visual C++
- * There is at most one EXCEPTION_REGISTRATION record per function, 
+ * There is at most one EXCEPTION_REGISTRATION record per function,
  * the rest is compiler dependent and we don't want to depend on that...
  */
 void dump_vc_exception_frame(EXCEPTION_REGISTRATION * pexcreg)
@@ -4568,14 +4559,14 @@ report_internal_exception(dcontext_t *dcontext, EXCEPTION_RECORD *pExcptRec,
         }
     });
 
-    /* FIXME: we need to test whether the exception is due to 
+    /* FIXME: we need to test whether the exception is due to
        Guard page violation - code 80000001 (not our own stack guard though)
        Stack overflow - code c00000fd (last guard page touched)
 
        We may get there because intercept_exception uses the application stack
        before calling asynch_take_over and in case of an invalid exception handler
        this will trickle down to it.
-               
+
        We can currently get here if trying to read application pages marked as GUARD pages,
        or marked as RESERVEd but not committed - in which case we'll receive a general
        Access violation - code c0000005 and we'd have to verify the page flags.
@@ -4584,7 +4575,7 @@ report_internal_exception(dcontext_t *dcontext, EXCEPTION_RECORD *pExcptRec,
     */
 
     /* note that the first adjusted_exception_addr is used for
-     * eventlog, and the second for forensics, and so both need to be adjusted 
+     * eventlog, and the second for forensics, and so both need to be adjusted
      */
     report_dynamorio_problem(dcontext, dumpcore_flag,
                              (app_pc) pExcptRec->ExceptionAddress,
@@ -4656,8 +4647,8 @@ is_execution_exception(EXCEPTION_RECORD *pExcptRec)
     bool execution = false;
 
     ASSERT(pExcptRec->ExceptionCode == EXCEPTION_ACCESS_VIOLATION);
- 
-    if (pExcptRec->ExceptionInformation[0] == 
+
+    if (pExcptRec->ExceptionInformation[0] ==
         EXCEPTION_INFORMATION_EXECUTE_FAULT) {
         /* certainly execution */
         execution = true;
@@ -4667,15 +4658,15 @@ is_execution_exception(EXCEPTION_RECORD *pExcptRec)
      * machine and whether this information code depends on whether
      * the current application is NX compatible. Verify that if this
      * is not set, it is expected to be just a read fault.  For the
-     * time being using the read/execute heuristic all the time 
+     * time being using the read/execute heuristic all the time
      */
 
-    if (pExcptRec->ExceptionInformation[0] == 
+    if (pExcptRec->ExceptionInformation[0] ==
         EXCEPTION_INFORMATION_READ_EXECUTE_FAULT) {
         if (fault_pc == target) {
             /* certainly execution */
             execution = true;
-        } else if (fault_pc < target && 
+        } else if (fault_pc < target &&
                    target < fault_pc + MAX_INSTR_LENGTH) {
             /* near a page boundary crossing a read exception can
              * happen either while reading the instruction (execution)
@@ -4691,7 +4682,7 @@ is_execution_exception(EXCEPTION_RECORD *pExcptRec)
              * is_readable_without_exception() to make sure we don't
              * have a race
              */
-            
+
             execution = true;   /* execution more likely */
             /* FIXME: case 1948 actually has to deal with this more
              * precisely when instructions may cross pages with
@@ -4739,9 +4730,9 @@ client_exception_event(dcontext_t *dcontext, CONTEXT *cxt,
     if (fragment != NULL && !hide_tag_from_client(fragment->tag)) {
         einfo.fault_fragment_info.tag = fragment->tag;
         einfo.fault_fragment_info.cache_start_pc = FCACHE_ENTRY_PC(fragment);
-        einfo.fault_fragment_info.is_trace = TEST(FRAG_IS_TRACE, 
+        einfo.fault_fragment_info.is_trace = TEST(FRAG_IS_TRACE,
                                                   fragment->flags);
-        einfo.fault_fragment_info.app_code_consistent = 
+        einfo.fault_fragment_info.app_code_consistent =
             !TESTANY(FRAG_WAS_DELETED|FRAG_SELFMOD_SANDBOXED, fragment->flags);
     }
 
@@ -4794,16 +4785,16 @@ check_internal_exception(dcontext_t *dcontext, CONTEXT *cxt,
      */
     /* FIXME : we still might pass exceptions that are our fault back to
      * the app (in a client library, global do syscall, client library dgc
-     * maybe others?). Also is the on_dstack/on_initstack check too 
-     * general?  We might take responsibility for app crashes if their esp 
+     * maybe others?). Also is the on_dstack/on_initstack check too
+     * general?  We might take responsibility for app crashes if their esp
      * gets set to random address that happens to match one of our stacks.
-     * We could additionally require that the pc is also in ntdll.dll or 
-     * kernel32.dll (that would cover cases (like bug 3516) where we call 
-     * out to other dlls) though as it is now it may cover some of the 
-     * remaining holes (client library for instance).  Is also possible 
+     * We could additionally require that the pc is also in ntdll.dll or
+     * kernel32.dll (that would cover cases (like bug 3516) where we call
+     * out to other dlls) though as it is now it may cover some of the
+     * remaining holes (client library for instance).  Is also possible
      * that we could take responsibility for an app exception that occurs
      * in the first few instructions of a location we hooked (since if
-     * we didn't takover at the hook, it would execute out of the 
+     * we didn't takover at the hook, it would execute out of the
      * interception buffer (guard page on stack for instance)).
      */
     /* Note the is_on_[init/d]stack routines count any guard pages as part
@@ -4833,7 +4824,7 @@ check_internal_exception(dcontext_t *dcontext, CONTEXT *cxt,
              * whether in a separate stub region.  we do this last to
              * reduce the scenarios in which we won't report a crash.
              */
-            if (is_dynamo_address((app_pc)pExcptRec->ExceptionAddress) && 
+            if (is_dynamo_address((app_pc)pExcptRec->ExceptionAddress) &&
                 !in_fcache(pExcptRec->ExceptionAddress)) {
 #ifdef CLIENT_INTERFACE
                 /* PR 451074: client needs a chance to handle exceptions in its
@@ -4851,12 +4842,12 @@ check_internal_exception(dcontext_t *dcontext, CONTEXT *cxt,
         }
     }
     if (is_DR_exception) {
-        /* Check if we ended up decoding from unreadable memory due to an 
+        /* Check if we ended up decoding from unreadable memory due to an
          * app race condition (case 845) or hit an IN_PAGE_ERROR (case 10567) */
         if ((pExcptRec->ExceptionCode == EXCEPTION_ACCESS_VIOLATION ||
              pExcptRec->ExceptionCode == EXCEPTION_IN_PAGE_ERROR) &&
-            (pExcptRec->NumberParameters >= 2) && 
-            (pExcptRec->ExceptionInformation[0] == 
+            (pExcptRec->NumberParameters >= 2) &&
+            (pExcptRec->ExceptionInformation[0] ==
              EXCEPTION_INFORMATION_READ_EXECUTE_FAULT
              )) {
             app_pc target_addr = (app_pc)pExcptRec->ExceptionInformation[1];
@@ -4876,9 +4867,9 @@ check_internal_exception(dcontext_t *dcontext, CONTEXT *cxt,
                     (pExcptRec->ExceptionCode == EXCEPTION_IN_PAGE_ERROR) ?
                     IN_PAGE_ERROR_EXCEPTION : UNREADABLE_MEMORY_EXECUTION_EXCEPTION;
 
-                /* The last decoded application pc should always be in the 
-                 * thread's last area, yet if code executed by one thread 
-                 * is unmapped by another we may have let it through 
+                /* The last decoded application pc should always be in the
+                 * thread's last area, yet if code executed by one thread
+                 * is unmapped by another we may have let it through
                  * check_thread_vm_area and into decode*()
                  */
                 SYSLOG_INTERNAL_ERROR("(decode) exception in last area, "
@@ -4908,7 +4899,7 @@ check_internal_exception(dcontext_t *dcontext, CONTEXT *cxt,
                                  "(decode unreadable)");
                 os_forge_exception(target_addr, exception_type);
 
-                /* CHECK: I hope we're not covering up the symptom instead 
+                /* CHECK: I hope we're not covering up the symptom instead
                  * of fixing the real cause
                  */
                 ASSERT_NOT_REACHED();
@@ -4984,7 +4975,7 @@ intercept_exception(app_state_at_intercept_t *state)
 
     /* if we have a valid dcontext then we're really valid, but we
      * could also have been just created so we also allow
-     * is_thread_known().  
+     * is_thread_known().
      * FIXME: is_thread_known() may be unnecessary */
     dcontext_t *dcontext = get_thread_private_dcontext();
 
@@ -5001,7 +4992,7 @@ intercept_exception(app_state_at_intercept_t *state)
         nt_terminate_thread(NT_CURRENT_THREAD, 0);
     }
 
-    if (intercept_asynch_global() && 
+    if (intercept_asynch_global() &&
         (dcontext != NULL || is_thread_known(get_thread_id()))) {
         priv_mcontext_t mcontext;
         app_pc forged_exception_addr;
@@ -5016,7 +5007,7 @@ intercept_exception(app_state_at_intercept_t *state)
         priv_mcontext_t raw_mcontext;
 #endif
         DEBUG_DECLARE(bool known_source = false;)
-        
+
         /* grab parameters to native method */
 #ifdef X64
         if (get_os_version() >= WINDOWS_VERSION_7) {
@@ -5069,7 +5060,7 @@ intercept_exception(app_state_at_intercept_t *state)
             dcontext->forged_exception_addr = NULL;
 
         LOG(THREAD, LOG_ASYNCH, 1,
-            "ASYNCH intercepted exception in %sthread %d at pc "PFX"\n", 
+            "ASYNCH intercepted exception in %sthread %d at pc "PFX"\n",
             takeover ? "" : "non-asynch ", get_thread_id(),
             pExcptRec->ExceptionAddress);
         DOLOG(2, LOG_ASYNCH, {
@@ -5091,12 +5082,12 @@ intercept_exception(app_state_at_intercept_t *state)
                          (byte *)cxt->CXT_XIP);
                 NULL_TERMINATE_BUFFER(excpt_addr);
 
-                /* Forensics for this event are dumped in hotp_execute_patch() 
-                 * because only that has vulnerability specific information. 
+                /* Forensics for this event are dumped in hotp_execute_patch()
+                 * because only that has vulnerability specific information.
                  */
                 SYSLOG_CUSTOM_NOTIFY(SYSLOG_ERROR, MSG_HOT_PATCH_FAILURE, 3,
-                                     "Hot patch exception, continuing.", 
-                                     get_application_name(), 
+                                     "Hot patch exception, continuing.",
+                                     get_application_name(),
                                      get_application_pid(), excpt_addr);
                 if (TEST(DUMPCORE_HOTP_FAILURE, DYNAMO_OPTION(dumpcore_mask)))
                     os_dump_core("hotp exception");
@@ -5108,7 +5099,7 @@ intercept_exception(app_state_at_intercept_t *state)
                 /* The exception interception code did an ENTER so we must EXIT here */
                 EXITING_DR();
                 DR_LONGJMP(&dcontext->hotp_excpt_state, LONGJMP_EXCEPTION);
-            } 
+            }
             /* Else, if it is on init stack, the control flow below would
              * report an internal error.
              */
@@ -5138,8 +5129,8 @@ intercept_exception(app_state_at_intercept_t *state)
                     is_on_dstack(dcontext, (byte *)cxt->CXT_XSP)) ||
                    is_on_initstack((byte *)cxt->CXT_XSP));
             ASSERT(pExcptRec->ExceptionCode == EXCEPTION_ACCESS_VIOLATION);
-            ASSERT_CURIOSITY((pExcptRec->NumberParameters >= 2) && 
-                             (pExcptRec->ExceptionInformation[0] == 
+            ASSERT_CURIOSITY((pExcptRec->NumberParameters >= 2) &&
+                             (pExcptRec->ExceptionInformation[0] ==
                               EXCEPTION_INFORMATION_READ_EXECUTE_FAULT
                               && "currently only racy reads"));
 # endif
@@ -5223,7 +5214,7 @@ intercept_exception(app_state_at_intercept_t *state)
                                     MOD_CODE_TAKEOVER | MOD_CODE_APP_CXT, NULL);
             /* now handle the fault just like RaiseException */
             DODEBUG({ known_source = true; });
-        } else if ((app_pc) pExcptRec->ExceptionAddress == 
+        } else if ((app_pc) pExcptRec->ExceptionAddress ==
                    get_setcontext_interceptor()) {
             ASSERT(!RUNNING_WITHOUT_CODE_CACHE());
             /* Restore to faulting address, no need to go to our interception routine
@@ -5273,7 +5264,7 @@ intercept_exception(app_state_at_intercept_t *state)
                                       "security-win32.gbop-test.exe",
                                       get_short_name(get_application_name())));
         ASSERT_CURIOSITY(pExcptRec->ExceptionCode != STATUS_PRIVILEGED_INSTRUCTION
-                         || check_filter("common.decode.exe;common.decode-bad.exe", 
+                         || check_filter("common.decode.exe;common.decode-bad.exe",
                                          get_short_name(get_application_name())));
 
         /* if !takeover, the thread could be native and not in fcache */
@@ -5320,7 +5311,7 @@ intercept_exception(app_state_at_intercept_t *state)
                  * the same if other DLLs can map there,
                  * e.g. !(ASLR_AVOID_AREAS|ASLR_RESERVE_AREAS).
                  */
-                if (DYNAMO_OPTION(aslr) != ASLR_DISABLED && 
+                if (DYNAMO_OPTION(aslr) != ASLR_DISABLED &&
                     (pExcptRec->ExceptionCode == EXCEPTION_ACCESS_VIOLATION) &&
                     is_execution_exception(pExcptRec)) {
                     app_pc execution_addr = pExcptRec->ExceptionAddress;
@@ -5335,7 +5326,7 @@ intercept_exception(app_state_at_intercept_t *state)
                                               "in preferred DLL range\n",
                                               execution_addr);
 
-                        if (TEST(ASLR_HANDLING, DYNAMO_OPTION(aslr_action))) 
+                        if (TEST(ASLR_HANDLING, DYNAMO_OPTION(aslr_action)))
                             handling_policy |= OPTION_HANDLING;
 
                         if (TEST(ASLR_REPORT, DYNAMO_OPTION(aslr_action)))
@@ -5361,7 +5352,7 @@ intercept_exception(app_state_at_intercept_t *state)
                 /* Note - temporarily lost control threads (UNDER_DYN_HACK) are
                  * whereami == WHERE_FCACHE (FIXME would be more logical to be
                  * WHERE_APP) and !takeover, but unlike the forge case we don't
-                 * need to fix them up here. */ 
+                 * need to fix them up here. */
                 if (!thread_is_lost) {
                     /* xref 8267, can't just check that exception addr matches
                      * forged addr because that can falsely match at 0, so
@@ -5412,7 +5403,7 @@ intercept_exception(app_state_at_intercept_t *state)
                     LOG(THREAD, LOG_ASYNCH, 2, "Fragment not found");
             });
             /* Need to fix EXCEPTION_RECORD's pc and CONTEXT's registers
-             * to pretend it was original code, not cache code 
+             * to pretend it was original code, not cache code
              */
             /* remember faulting pc */
             faulting_pc = (cache_pc) pExcptRec->ExceptionAddress;
@@ -5435,7 +5426,7 @@ intercept_exception(app_state_at_intercept_t *state)
                  * exceptionaddress first since cxt is the one we want for real, we
                  * just want pc for exceptionaddress.
                  */
-                app_pc translated_pc = 
+                app_pc translated_pc =
                     recreate_app_pc(dcontext, pExcptRec->ExceptionAddress, f);
                 ASSERT(translated_pc != NULL);
                 LOG(THREAD, LOG_ASYNCH, 2, "Translated ExceptionAddress "
@@ -5563,7 +5554,7 @@ intercept_exception(app_state_at_intercept_t *state)
              * a special translator that knows to look back there, rather
              * than at the exception pc (== after call to RtlRaiseException)
              *
-             * Also, note that exceptions we generate via os_forge_exception 
+             * Also, note that exceptions we generate via os_forge_exception
              * end up here as well, they need no translation.
              */
             DOLOG(1, LOG_ASYNCH, {
@@ -5644,7 +5635,7 @@ intercept_raise_exception(app_state_at_intercept_t *state)
 
         LOG(THREAD_GET, LOG_ASYNCH, 1, "ASYNCH intercept_raise_exception()\n");
         STATS_INC(num_raise_exceptions);
-        
+
         asynch_retakeover_if_native();
         /* We want to squash the current trace (don't want traces
          * following exceptions), asynch_take_over does that for us.
@@ -5726,8 +5717,8 @@ os_forge_exception(app_pc exception_address, dr_exception_type_t exception_type)
         CONTEXT_DEBUG_REGISTERS;
     /* keep in mind the above structure is 716 bytes */
 
-    LOG(THREAD, LOG_ASYNCH, 1, 
-        "ASYNCH os_forge_exception(type "PFX" addr "PFX")\n", 
+    LOG(THREAD, LOG_ASYNCH, 1,
+        "ASYNCH os_forge_exception(type "PFX" addr "PFX")\n",
         exception_type, exception_address);
 
     initialize_exception_record(&excrec, exception_address, exception_type);
@@ -5754,23 +5745,23 @@ os_forge_exception(app_pc exception_address, dr_exception_type_t exception_type)
     mcontext_to_context(&context, get_mcontext(dcontext),
                         false /* !set_cur_seg */);
     context.CXT_XIP = (ptr_uint_t)exception_address;
- 
+
     DOLOG(2, LOG_ASYNCH, {
         LOG(THREAD, LOG_ASYNCH, 2, "\nASYNCH context after remapping\n");
         dump_exception_info(&excrec, &context);
     });
 
     /* FIXME: App Context issues. */
-    /* For some uses of forge_exception we expect registers to differ from 
+    /* For some uses of forge_exception we expect registers to differ from
      * native since we forge the exception at the start of the basic block we
      * think will cause the exception (FIXME).  But even when that is not the
      * case the eflags register still sometimes differs from native for unknown
-     * reasons, in my tests with the decode_prefixes unit test the resume 
-     * flags would be set natively, but not under us and the parity flags 
+     * reasons, in my tests with the decode_prefixes unit test the resume
+     * flags would be set natively, but not under us and the parity flags
      * would be set under us but not natively. FIXME
      */
-    
-    /* FIXME : We might want to use nt_raise_exception here instead of 
+
+    /* FIXME : We might want to use nt_raise_exception here instead of
      * os_raise_exception, then we could get rid of that function & issue_last
      * _system_call_from_app.  Also if we call this too early we might
      * not know the syscall method yet, in which case we could screw up the
@@ -5778,10 +5769,10 @@ os_forge_exception(app_pc exception_address, dr_exception_type_t exception_type)
      * syscall fails (can happen if args are bad) then nt_raise_exception will
      * return to us but os_raise_exception will return in to random app memory
      * for xp/2003 and into our global syscall buffer on 2000 (which will
-     * prob. fault).  nt_raise_exception also allows the possibility for 
+     * prob. fault).  nt_raise_exception also allows the possibility for
      * recovering  (though we currently assert).  As far as os_transparency
      * goes, nt_raise_exception will have the right return addresses,
-     * (thought shouldn't matter to the OS).  os_raise_exception has the 
+     * (thought shouldn't matter to the OS).  os_raise_exception has the
      * advantage of going through our cache entering routines before generating
      * the exception so will reach our exception handler with internal dynamo
      * state more similar to the app exception we are trying to forge.  This
@@ -5802,7 +5793,7 @@ os_forge_exception(app_pc exception_address, dr_exception_type_t exception_type)
  * come back here they will also hit the int 2b seen below.
  * N.B.: This "int 2b" ending is my theory, I can find no documentation on it!
  * UPDATE: Inside Win2K book confirms that int 2b maps to NtCallbackReturn
- * 
+ *
 KiUserCallbackDispatcher:
   77F9F038: 83 C4 04           add         esp,4
   77F9F03B: 5A                 pop         edx
@@ -5862,7 +5853,7 @@ KiUserCallbackDispatcher:
   00000000`77ef319a cc              int     3
  *
  * ASSUMPTIONS:
- *    1) peb->KernelCallbackTable[*(esp+IF_X64_ELSE(0x2c,4))] == 
+ *    1) peb->KernelCallbackTable[*(esp+IF_X64_ELSE(0x2c,4))] ==
  *       call* target (used for debug only)
  */
 /* Remember that every path out of here must invoke the DR exit hook.
@@ -5932,7 +5923,7 @@ intercept_callback_start(app_state_at_intercept_t *state)
                     LOG(cur_dcontext->logfile, LOG_ASYNCH, 2,
                         "\tafter_callback_orig_pc == "PFX", pointed to @"PFX"\n",
                         after_callback_orig_pc, pc);
-                    stop = pc + 29; 
+                    stop = pc + 29;
                 } else {
                     LOG(cur_dcontext->logfile, LOG_ASYNCH, 2,
                         "\tafter_apc_orig_pc == "PFX", pointed to @"PFX"\n",
@@ -5957,13 +5948,13 @@ intercept_callback_start(app_state_at_intercept_t *state)
                     instr_init(dcontext, &instr);
                     /* Have to decode previous call...tough to do, how
                      * tell call* from call?
-                    e8 f3 cd ff ff       call   $0x77f4386b 
-                    ff 15 20 11 f4 77    call   0x77f41120 
+                    e8 f3 cd ff ff       call   $0x77f4386b
+                    ff 15 20 11 f4 77    call   0x77f41120
                       can you have call 0x?(?,?,?) such that last 5 bytes look like direct call?
-                    ff 14 90             call   (%eax,%edx,4) 
-                    ff 55 08             call   0x8(%ebp) 
-                    ff 56 5c             call   0x5c(%esi) 
-                    ff d3                call   %ebx 
+                    ff 14 90             call   (%eax,%edx,4)
+                    ff 55 08             call   0x8(%ebp)
+                    ff 56 5c             call   0x5c(%esi)
+                    ff d3                call   %ebx
                     */
                     cpc -= 5;
                     LOG(cur_dcontext->logfile, LOG_ASYNCH, 2,
@@ -6065,8 +6056,8 @@ callback_setup(app_pc next_pc)
     old_dcontext = get_thread_private_dcontext();
     ASSERT(old_dcontext);
 
-#ifdef CROWD_SAFE_INTEGRATION
-    crowd_safe_heartbeat(old_dcontext);
+#ifdef SECURITY_AUDIT
+    audit_heartbeat(old_dcontext);
 #endif
 
     if (!old_dcontext->initialized) {
@@ -6106,7 +6097,7 @@ callback_setup(app_pc next_pc)
     /* go to end of valid (==saved) contexts */
     while (dc->prev_unused != NULL && dc->prev_unused->valid)
         dc = dc->prev_unused;
-    if (INTERNAL_OPTION(stress_detach_with_stacked_callbacks) && 
+    if (INTERNAL_OPTION(stress_detach_with_stacked_callbacks) &&
         dc != old_dcontext && dc != old_dcontext->prev_unused &&
         dc != old_dcontext->prev_unused->prev_unused) {
         /* internal stress testing of detach (once app has multiple stacked callbacks) */
@@ -6117,9 +6108,9 @@ callback_setup(app_pc next_pc)
         ASSERT(!new_dcontext->valid);
     } else {
         /* need to make a new dcontext */
-        /* FIXME: how do we know we're not getting a new callback 
+        /* FIXME: how do we know we're not getting a new callback
            while in a system call for allocating more memory?
-           This routine should be organized so that we spend minimal time 
+           This routine should be organized so that we spend minimal time
            setting up a new context and then we should be able to handle a new one.
            We need a per-thread flag/counter saying are we handling a callback stack.
            Not that we can do anything about it when we come here again and the flag is set,
@@ -6165,8 +6156,8 @@ callback_setup(app_pc next_pc)
     new_dcontext->valid = true;
     old_dcontext->valid = true;
 
-#ifdef CROWD_SAFE_INTEGRATION
-    push_nested_shadow_stack(old_dcontext);
+#ifdef SECURITY_AUDIT
+    audit_nested_shadow_stack(old_dcontext, true/*push*/);
 #endif
 
     /* now prepare to use new dcontext, pointed to by old_dcontext ptr */
@@ -6184,7 +6175,7 @@ callback_setup(app_pc next_pc)
         new_dcontext = old_dcontext->prev_unused;
         LOG(old_dcontext->logfile, LOG_ASYNCH, 2,
             "callback_setup(): re-using unused dcontext\n");
-    } 
+    }
     else {
         new_dcontext = create_callback_dcontext(old_dcontext);
         old_dcontext->prev_unused = new_dcontext;
@@ -6301,7 +6292,7 @@ callback_start_return(priv_mcontext_t *mc)
                  * if there were indirect jmps.
                  */
                 SYSLOG_INTERNAL_ERROR("non-process-init callback return with native callback context for %s thread %d",
-                                      (tr == NULL) ? "unknown" : "known", 
+                                      (tr == NULL) ? "unknown" : "known",
                                       get_thread_id());
                 /* might be injected late, refer to bug 426 for discussion
                  * of instance here where that was the case */
@@ -6327,7 +6318,7 @@ callback_start_return(priv_mcontext_t *mc)
                       DUMP_NOT_XML);
     });
 
-    /* now swap cur and prev 
+    /* now swap cur and prev
      * N.B.: callback return brings up a tricky dual-dcontext problem, where
      * we need the cur dcontext to restore to native state right before interrupt
      * (after this routine returns), but we need to restore to prev dcontext now
@@ -6342,8 +6333,8 @@ callback_start_return(priv_mcontext_t *mc)
     /* invalidate prev */
     prev_dcontext->valid = false;
 
-#ifdef CROWD_SAFE_INTEGRATION
-    pop_nested_shadow_stack(cur_dcontext);
+#ifdef SECURITY_AUDIT
+    audit_nested_shadow_stack(cur_dcontext, false/*pop*/);
 #endif
 
     DOLOG(5, LOG_ASYNCH, {
@@ -6490,7 +6481,7 @@ intercept_load_dll(app_state_at_intercept_t *state)
         /* FIXME: case 7127: currently doesn't obey
          * -exclude_gbop_list, which should set a flag.
          */
-        gbop_validate_and_act(state, 
+        gbop_validate_and_act(state,
                               0 /* no ESP offset - at entry point */,
                               load_dll_pc);
         /* if GBOP validation at all returns it accepted the source */
@@ -6512,7 +6503,7 @@ intercept_load_dll(app_state_at_intercept_t *state)
         UNICODE_STRING name_cpy = {0};
         /* arg pointers are user supplied so be extra carefull */
         if (safe_read(name, sizeof(UNICODE_STRING), &name_cpy) &&
-            safe_read(name_cpy.Buffer, 
+            safe_read(name_cpy.Buffer,
                       MIN(BUFFER_SIZE_BYTES(buf), name_cpy.Length), buf)) {
             ASSERT_CURIOSITY(name_cpy.Length <= BUFFER_SIZE_BYTES(buf));
             /* null terminate */
@@ -6552,7 +6543,7 @@ intercept_load_dll(app_state_at_intercept_t *state)
     if (tr == NULL) {
         LOG(GLOBAL, LOG_VMAREAS, 1, "WARNING: native thread in intercept_load_dll\n");
         if (control_all_threads) {
-            SYSLOG_INTERNAL_ERROR("LdrLoadDll reached by unexpected %s thread %d", 
+            SYSLOG_INTERNAL_ERROR("LdrLoadDll reached by unexpected %s thread %d",
                                   (tr == NULL) ? "unknown" : "known",
                                   get_thread_id());
             /* case 9385 tracks an instance */
@@ -6607,7 +6598,7 @@ intercept_unload_dll(app_state_at_intercept_t *state)
         LOG(GLOBAL, LOG_VMAREAS, 1, "WARNING: native thread in "
                                     "intercept_unload_dll\n");
         if (control_all_threads) {
-            SYSLOG_INTERNAL_ERROR("LdrUnloadDll reached by unexpected %s thread %d", 
+            SYSLOG_INTERNAL_ERROR("LdrUnloadDll reached by unexpected %s thread %d",
                                   (tr == NULL) ? "unknown" : "known",
                                   get_thread_id());
             /* case 9385 tracks an instance */
@@ -6626,17 +6617,17 @@ intercept_unload_dll(app_state_at_intercept_t *state)
         /* ENTERING GROSS HACK AREA, case 374 */
 #       define HACK_EXE_NAME SVCHOST_EXE_NAME "-netsvcs"
 #       define L_PIN_DLL_NAME  L"wzcsvc.dll"
-        /* The unload order is wzcsvc.dll, WINSTA.dll, CRYPT32.dll, MSASN1.DLL, 
+        /* The unload order is wzcsvc.dll, WINSTA.dll, CRYPT32.dll, MSASN1.DLL,
            so waiting on the first one should be sufficient */
         /* We don't want to let this dll be unloaded immediately before it
-         * handles some callbacks, so we need to add a time out to the 
-         * unloading thread.  It looks like we're too late to pin it in memory 
-         * so our substitute for 
+         * handles some callbacks, so we need to add a time out to the
+         * unloading thread.  It looks like we're too late to pin it in memory
+         * so our substitute for
          * WinXP::GetModuleHandleEx(GET_MODULE_HANDLE_EX_FLAG_PIN) didn't work.
          */
 
         if (in_svchost < 0) {   /* unknown yet */
-            /* NOTE: the hack is needed only for the bug in svchost-netsvcs, 
+            /* NOTE: the hack is needed only for the bug in svchost-netsvcs,
                seems to be an issue only on Win2k SP4
                if that grouping changes this may become a problem again.
             */
@@ -6645,28 +6636,28 @@ intercept_unload_dll(app_state_at_intercept_t *state)
                                     get_short_name(get_application_name())) == 0;
             SELF_PROTECT_DATASEC(DATASEC_RARELY_PROT);
             LOG(GLOBAL, LOG_VMAREAS, 3, "intercept_unload_dll: svchost_timeout "
-                "hack_name=%s app_name=%s in_svchost=%d\n", 
+                "hack_name=%s app_name=%s in_svchost=%d\n",
                 HACK_EXE_NAME, get_short_name(get_application_name()), in_svchost);
         }
 
         if (in_svchost) {
             extern LDR_MODULE *get_ldr_module_by_pc(app_pc pc); /* in module.c */
 
-            /* FIXME: we're not holding the loader lock here 
-               we may want a deeper interception point, 
+            /* FIXME: we're not holding the loader lock here
+               we may want a deeper interception point,
                or maybe we should just as well grab the lock */
             LDR_MODULE* mod = get_ldr_module_by_pc((app_pc)h);
 
             if (mod && (wcscasecmp(L_PIN_DLL_NAME, mod->BaseDllName.Buffer) == 0)) {
                 LOG(GLOBAL, LOG_VMAREAS, 1, "intercept_unload_dll: "
-                    "svchost_timeout found target app_name=%s dll_name=%ls\n", 
+                    "svchost_timeout found target app_name=%s dll_name=%ls\n",
                     HACK_EXE_NAME, mod->BaseDllName.Buffer);
 
                 SYSLOG_INTERNAL_WARNING("WARNING: svchost timeout in progress");
                 /* let the events get delivered */
                 os_timeout(dynamo_options.svchost_timeout);
 
-                /* This event can happen any time explorer.exe is restarted so 
+                /* This event can happen any time explorer.exe is restarted so
                  * we stay alert
                  */
             }
@@ -6711,7 +6702,7 @@ intercept_unload_dll(app_state_at_intercept_t *state)
 void
 retakeover_after_native(thread_record_t *tr, retakeover_point_t where)
 {
-    ASSERT(IS_UNDER_DYN_HACK(tr->under_dynamo_control) || 
+    ASSERT(IS_UNDER_DYN_HACK(tr->under_dynamo_control) ||
            tr->retakeover ||
            dr_injected_secondary_thread);
     tr->under_dynamo_control = true;
@@ -6783,15 +6774,15 @@ retakeover_after_native(thread_record_t *tr, retakeover_point_t where)
         /* need to re-walk exec areas since may have changed
          * while app was native
          */
-        /* first clear the executable list, FIXME : do we need to clear the 
+        /* first clear the executable list, FIXME : do we need to clear the
          * futurexec list too? */
         flush_fragments_and_remove_region(dcontext, UNIVERSAL_REGION_BASE,
                                           UNIVERSAL_REGION_SIZE,
                                           false /* don't own initexit_lock */,
                                           true /* remove futures */);
-        
+
         /* need to clean any existing regions */
-        DOLOG(SYMBOLS_LOGLEVEL, LOG_SYMBOLS, { 
+        DOLOG(SYMBOLS_LOGLEVEL, LOG_SYMBOLS, {
             module_cleanup();
         });
         modules_reset_list();
@@ -6846,7 +6837,7 @@ void
 take_over_primary_thread(void)
 {
     /* note that if we have initialized this thread we already have the value,
-     * but making this more generic in case we move it, 
+     * but making this more generic in case we move it,
      */
     app_pc win32_start_addr = 0;
     NTSTATUS res = query_win32_start_addr(NT_CURRENT_THREAD, &win32_start_addr);
@@ -6890,7 +6881,7 @@ take_over_primary_thread(void)
         /* these will be set to to true only when we reach the image entry */
 
         /* flags the reason for taking over late for use by
-         * insert_image_entry_trampoline() 
+         * insert_image_entry_trampoline()
          */
         dr_injected_secondary_thread = true;
 
@@ -6928,7 +6919,7 @@ intercept_image_entry(app_state_at_intercept_t *state)
             if (win32_start_addr != get_image_entry()) {
                 ASSERT(false && "reached by non-primary thread");
                 /* FIXME: if this can happen we may want to wait for
-                 * the primary and do this out of DODEBUG as well 
+                 * the primary and do this out of DODEBUG as well
                  */
             }
         });
@@ -6958,8 +6949,8 @@ intercept_image_entry(app_state_at_intercept_t *state)
                 dcontext_t *existing_dcontext = get_thread_private_dcontext();
 
                 /* we MUST flush our image entry point fragment that
-                 * would currently use the trampoline.  
-                 */ 
+                 * would currently use the trampoline.
+                 */
                 ASSERT(fragment_lookup(existing_dcontext, image_entry_pc) != NULL);
                 /* We can lookup at that tag almost for sure,
                  * currently since the indirect call will always have
@@ -7065,7 +7056,7 @@ intercept_image_entry(app_state_at_intercept_t *state)
              * we want to take over so no conditional is needed there.
              */
         } else {
-            SYSLOG_INTERNAL_ERROR("Image entry interception point reached by unexpected %s thread %d", 
+            SYSLOG_INTERNAL_ERROR("Image entry interception point reached by unexpected %s thread %d",
                                   (tr == NULL) ? "unknown" : "known",
                                   get_thread_id());
             ASSERT_NOT_REACHED();
@@ -7096,9 +7087,9 @@ insert_image_entry_trampoline(dcontext_t *dcontext)
      * FIXME: how find that programatically?  is it used for every process?
      * Inside Windows 2000 indicates that it is.
      * Promising approach: use QueryThreadInformation with ThreadQuerySetWin32StartAddress
-     * -- although that can get clobbered, hopefully will still be set to start 
+     * -- although that can get clobbered, hopefully will still be set to start
      * address when we read it.
-     * Note that will most likely be the image entry point (win32), not the 
+     * Note that will most likely be the image entry point (win32), not the
      * actual entry point (it is the address in eax of the CreateThread system
      * call) as that's how it behaves for a normal CreateThread
      */
@@ -7153,15 +7144,15 @@ insert_image_entry_trampoline(dcontext_t *dcontext)
    so when we dereference an imported function we get its real address
    instead of a stub in our module. The loader does the rest of the magic.
 */
-GET_NTDLL(KiUserApcDispatcher, (IN PVOID Unknown1, 
-                                IN PVOID Unknown2, 
-                                IN PVOID Unknown3, 
-                                IN PVOID ContextStart, 
+GET_NTDLL(KiUserApcDispatcher, (IN PVOID Unknown1,
+                                IN PVOID Unknown2,
+                                IN PVOID Unknown3,
+                                IN PVOID ContextStart,
                                 IN PVOID ContextBody));
-GET_NTDLL(KiUserCallbackDispatcher, (IN PVOID Unknown1, 
-                                     IN PVOID Unknown2, 
+GET_NTDLL(KiUserCallbackDispatcher, (IN PVOID Unknown1,
+                                     IN PVOID Unknown2,
                                      IN PVOID Unknown3));
-GET_NTDLL(KiUserExceptionDispatcher, (IN PVOID Unknown1, 
+GET_NTDLL(KiUserExceptionDispatcher, (IN PVOID Unknown1,
                                       IN PVOID Unknown2));
 GET_NTDLL(KiRaiseUserExceptionDispatcher, (void));
 
@@ -7183,10 +7174,10 @@ callback_interception_init_start(void)
     interception_code = interception_code_array;
 
 #ifdef INTERCEPT_TOP_LEVEL_EXCEPTIONS
-    app_top_handler = 
+    app_top_handler =
         SetUnhandledExceptionFilter((LPTOP_LEVEL_EXCEPTION_FILTER) our_top_handler);
 #endif
-    
+
     /* Note that we go ahead and assume that the app's esp is valid for
      * most of these interceptions.  This is for efficiency -- the alternative
      * is to use the global initstack, which imposes a synchronization point,
@@ -7255,10 +7246,10 @@ callback_interception_init_start(void)
 
     /* hook APC dispatcher, also check context offset */
     /* APC dispatcher is hooked for thin_client too, so that
-     * each thread can have a dcontext (case 8884).  Needed for handling 
-     * process control/detach nudges for thin_client and for muting other ones 
+     * each thread can have a dcontext (case 8884).  Needed for handling
+     * process control/detach nudges for thin_client and for muting other ones
      * (case 8888).  Also, in future, if we implement inflating to hotp_only
-     * mode, then each thread needs to have a dcontext. 
+     * mode, then each thread needs to have a dcontext.
      */
     check_apc_context_offset((byte*)KiUserApcDispatcher);
     after_apc_orig_pc = get_pc_after_call((byte*)KiUserApcDispatcher, NULL);
@@ -7348,12 +7339,12 @@ callback_interception_init_finish(void)
 
     if (!DYNAMO_OPTION(thin_client)) {
         raise_exception_pc = pc;
-        pc = intercept_call(pc, (byte*)KiRaiseUserExceptionDispatcher, 
+        pc = intercept_call(pc, (byte*)KiRaiseUserExceptionDispatcher,
                             intercept_raise_exception,
                             0, /* no arg */
                             false /* do not assume esp */,
                             AFTER_INTERCEPT_LET_GO,
-                            false /* cannot ignore on CTI */, 
+                            false /* cannot ignore on CTI */,
                             false /* handle CTI */,
                             NULL, NULL);
 
@@ -7369,10 +7360,10 @@ callback_interception_init_finish(void)
         load_dll_pc = pc;
         pc = intercept_call(pc, (byte*)LdrLoadDll, intercept_load_dll,
                             0, /* no arg */
-                            false /* do not assume esp */, 
+                            false /* do not assume esp */,
                             AFTER_INTERCEPT_DYNAMIC_DECISION,
-                            true /* not critical trampoline, can ignore if 
-                                  * hooked with CTI */, 
+                            true /* not critical trampoline, can ignore if
+                                  * hooked with CTI */,
                             false /* handle CTI */,
                             NULL, NULL);
         if (pc == NULL) {
@@ -7382,14 +7373,14 @@ callback_interception_init_finish(void)
         }
 
         unload_dll_pc = pc;
-        /* FIXME: used only for DEBUG and svchost_hack (case 374), shouldn't 
+        /* FIXME: used only for DEBUG and svchost_hack (case 374), shouldn't
          * do it all the time
          */
         pc = intercept_call(pc, (byte*)LdrUnloadDll, intercept_unload_dll,
                             0, /* no arg */
-                            false /* do not assume esp */, 
+                            false /* do not assume esp */,
                             AFTER_INTERCEPT_DYNAMIC_DECISION,
-                            true /* not critical trampoline, can ignore if 
+                            true /* not critical trampoline, can ignore if
                                   * hooked with CTI */,
                             false /* handle CTI */,
                             NULL, NULL);
@@ -7506,7 +7497,7 @@ callback_interception_init_finish(void)
     /* No vm areas except dynamo_areas exists in thin_client mode. */
     if (!DYNAMO_OPTION(thin_client)) {
         /* add interception code to the executable list */
-        /* N.B.: we duplicate this call after losing control and re-doing exec 
+        /* N.B.: we duplicate this call after losing control and re-doing exec
          * regions
          */
         add_executable_region(interception_code, INTERCEPTION_CODE_SIZE
@@ -7574,7 +7565,7 @@ callback_interception_exit()
     landing_pads_to_executable_areas(false /* remove */);
 }
 
-static void 
+static void
 swap_dcontexts(dcontext_t *d1, dcontext_t *d2)
 {
     dcontext_t temp;
@@ -7630,13 +7621,13 @@ at_initial_stack_bottom(dcontext_t *dcontext, app_pc target_pc)
      *  - either explicitly save it after all, or maybe only use the depth
      *    instead of matching the address
      */
-    LOG(THREAD, LOG_ASYNCH|LOG_STATS, 1, 
+    LOG(THREAD, LOG_ASYNCH|LOG_STATS, 1,
         "get_initial_stack_bottom: preinjected=%d interception_point=%d "
-        "after_callback="PFX"\n", 
+        "after_callback="PFX"\n",
         dr_preinjected, interception_point, after_callback_orig_pc);
-    /* CHECK: drinject AND follow children go through dynamo_auto_start 
+    /* CHECK: drinject AND follow children go through dynamo_auto_start
        instead of dynamorio_app_take_over which sets dr_preinjected */
-    
+
     /* we start with an empty stack when explicitly injected  */
     if (!dr_preinjected)
         return INITIAL_STACK_EMPTY;
@@ -7731,7 +7722,7 @@ at_driver_rct_exception(dcontext_t *dcontext, app_pc source_pc)
    source_fragment (e.g. like at_vbjmp_exception), then we wouldn't
    have to worry about readability of the target address and it is in
    a way safer.
-  
+
    In terms of multithread safety - it is OK to have multiple threads
    test for the condition, and as long as any of them sets the
    exempted address I don't expect attackers to have any chance here.
@@ -7740,7 +7731,7 @@ at_driver_rct_exception(dcontext_t *dcontext, app_pc source_pc)
    a higher level check should be added to return
    UNREADABLE_MEMORY_EXECUTION_EXCEPTION in that case.
 
-   > u 0x77e65927  
+   > u 0x77e65927
    kernel32!ConvertFiberToThread+0x44:  [ with symbols kernel32!BaseFiberStart: ]
    77e65927 64a110000000     mov     eax,fs:[00000010]  ; FIBER_DATA_TIB_OFFSET
 
@@ -7803,7 +7794,7 @@ at_fiber_init_known_exception(dcontext_t *dcontext, app_pc target_pc)
     }
 
     /* check if this is the first time we got to create a fiber,
-     * and save the value as the only exception that is allowed to start with 
+     * and save the value as the only exception that is allowed to start with
      * this pattern */
     if (fiber_init_known_pc == 0) { /* never seen before */
         /* match first 7 bytes of mov eax/rax/rcx, fs/gs:[FIBER_DATA_TIB_OFFSET] */
@@ -7882,7 +7873,7 @@ at_fiber_init_known_exception(dcontext_t *dcontext, app_pc target_pc)
     return false;
 }
 
-enum { 
+enum {
     MAX_SEH_TRYLEVEL = 8,
     INSTR_PUSH_IMMED32_LENGTH = 5,
     INSTR_PUSH_IMMED32_OPCODE = 0x68,
@@ -7899,7 +7890,7 @@ enum {
  *   77f1d9e4 ff2548c0f377 jmp dword ptr [KERNEL32!_imp__RtlReleasePebLock (77f3c048)]
  *   77f1d9ea c3               ret
  *   77f1d9eb 0fb645e7         movzx   eax,byte ptr [ebp-0x19]
- *   
+ *
  *   at top of routine we have:
  *   KERNEL32!TlsFree:
  *   77f1d92d 64a100000000     mov     eax,fs:[00000000]
@@ -7908,7 +7899,7 @@ enum {
  *   77f1d936 6aff             push    0xff
  *   77f1d938 6808d3f377       push    0x77f3d308
  *   77f1d93d 6844b7f377       push    0x77f3b744
- *   
+ *
  *   and indeed those are on top of the SEH stack:
  *   0:000> !teb
  *   TEB at 7ffde000
@@ -7917,7 +7908,7 @@ enum {
  *   0012fdb4  0012fe2c
  *   0012fdb8  77f3b744 KERNEL32!_except_handler3
  *   0012fdbc  77f3d308 KERNEL32!ntdll_NULL_THUNK_DATA+0xebc
- *   
+ *
  *   and the handler is the instr after the push immed:
  *   0:000> dds 77f3d308
  *   77f3d308  ffffffff
@@ -7939,7 +7930,7 @@ at_SEH_rct_exception(dcontext_t *dcontext, app_pc target_pc)
     /* first, we only allow this in a text section */
     modbase = get_module_base(target_pc);
     if (modbase == NULL ||
-        !is_in_code_section(modbase, target_pc, NULL, NULL)) 
+        !is_in_code_section(modbase, target_pc, NULL, NULL))
         return false;
     /* now read SEH data structs, being careful not to fault */
     if (!is_readable_without_exception((app_pc)teb->ExceptionList,
@@ -7963,7 +7954,7 @@ at_SEH_rct_exception(dcontext_t *dcontext, app_pc target_pc)
                                        INSTR_PUSH_IMMED32_LENGTH))
         return false;
     LOG(GLOBAL, LOG_INTERP, 3,
-        "RCT: at_SEH_rct_exception: testing "PFX" for push $"PFX"\n", 
+        "RCT: at_SEH_rct_exception: testing "PFX" for push $"PFX"\n",
         pc - INSTR_PUSH_IMMED32_LENGTH, target_pc);
     /* not worth risk of decoding -- we check raw bytes */
     if (*(pc - INSTR_PUSH_IMMED32_LENGTH) == INSTR_PUSH_IMMED32_OPCODE &&
@@ -8028,7 +8019,7 @@ at_Borland_SEH_rct_exemption(dcontext_t *dcontext, app_pc target_pc)
     app_pc base, jmp_target, jmp_loc = target_pc - JMP_LONG_LENGTH;
     byte buf[JMP_LONG_LENGTH];
 
-    if (!seen_Borland_SEH || 
+    if (!seen_Borland_SEH ||
         /* see above this routine is only for a certain .E/.F violation */
         (DYNAMO_OPTION(rct_ind_jump) == OPTION_DISABLED &&
          DYNAMO_OPTION(rct_ind_call) == OPTION_DISABLED)) {
@@ -8036,7 +8027,7 @@ at_Borland_SEH_rct_exemption(dcontext_t *dcontext, app_pc target_pc)
     }
 
     base = get_module_base(target_pc);
-    if (base != NULL && 
+    if (base != NULL &&
         /* even without rct_analyze_at_load should have processed this
          * module by now (before we hit the exemption code) */
         rct_ind_branch_target_lookup(dcontext, jmp_loc) != NULL &&
@@ -8075,7 +8066,7 @@ at_rct_exempt_module(dcontext_t *dcontext, app_pc target_pc, app_pc source_fragm
                                                source_module_name);
         if (onlist != LIST_NO_MATCH) {
             LOG(THREAD, LOG_INTERP, 1,
-                "at_rct_exempt_module: source_fragment="PFX" same=%d is_dyngen=%d\n", 
+                "at_rct_exempt_module: source_fragment="PFX" same=%d is_dyngen=%d\n",
                 source_fragment, in_same_module(target_pc, source_fragment),
                 is_dyngen_code(target_pc));
             if (in_same_module(target_pc, source_fragment) || is_dyngen_code(target_pc)) {
@@ -8124,7 +8115,7 @@ at_rct_exempt_module(dcontext_t *dcontext, app_pc target_pc, app_pc source_fragm
         (!IS_STRING_OPTION_EMPTY(exempt_rct_from_default_list) ||
          !IS_STRING_OPTION_EMPTY(exempt_rct_from_list))) {
         LOG(THREAD, LOG_INTERP, 2,
-            "at_rct_exempt_module: source_fragment="PFX" module_name=%s\n", 
+            "at_rct_exempt_module: source_fragment="PFX" module_name=%s\n",
             source_fragment, source_module_name != NULL ? source_module_name : "<none>");
         /* note check_list_default_and_append will grab string_option_read_lock */
         if (source_module_name != NULL &&
@@ -8183,13 +8174,13 @@ at_known_exception(dcontext_t *dcontext, app_pc target_pc, app_pc source_fragmen
     }
 
     /* check whether withing an exempt module or targeting DGC from a known module */
-    if (DYNAMO_OPTION(exempt_rct) && 
+    if (DYNAMO_OPTION(exempt_rct) &&
         at_rct_exempt_module(dcontext, target_pc, source_fragment)) {
         DODEBUG({
             const char *name;
             os_get_module_info_lock();
             os_get_module_name(target_pc, &name);
-            SYSLOG_INTERNAL_WARNING_ONCE("RCT: target_pc "PFX" exempt in module %s", 
+            SYSLOG_INTERNAL_WARNING_ONCE("RCT: target_pc "PFX" exempt in module %s",
                                          target_pc, name == NULL ? "<null>" : name);
             os_get_module_info_unlock();
         });
@@ -8237,8 +8228,8 @@ get_drmarker(void)
  * module.  For now, the consumer is hotp_only.
  */
 byte *
-hook_text(byte *hook_code_buf, const app_pc image_addr, 
-          intercept_function_t hook_func, const void *callee_arg, 
+hook_text(byte *hook_code_buf, const app_pc image_addr,
+          intercept_function_t hook_func, const void *callee_arg,
           const after_intercept_action_t action_after,
           const bool abort_if_hooked, const bool ignore_cti,
           byte **app_code_copy_p, byte **alt_exit_tgt_p)
@@ -8247,11 +8238,11 @@ hook_text(byte *hook_code_buf, const app_pc image_addr,
     ASSERT(DYNAMO_OPTION(hotp_only));
     ASSERT(hook_code_buf != NULL && image_addr != NULL && hook_func != NULL);
 
-    /* Currently hotp_only is the only user for this.  However if any other 
-     * module wants to use this, we better find out if they are trying to hook 
-     * something other than the .text section; note, it will still hook if it 
-     * isn't the text section. 
-     */ 
+    /* Currently hotp_only is the only user for this.  However if any other
+     * module wants to use this, we better find out if they are trying to hook
+     * something other than the .text section; note, it will still hook if it
+     * isn't the text section.
+     */
     ASSERT_CURIOSITY(is_in_code_section(get_module_base(image_addr), image_addr,
                                         NULL, NULL));
 
@@ -8261,7 +8252,7 @@ hook_text(byte *hook_code_buf, const app_pc image_addr,
                           abort_if_hooked, ignore_cti,
                           app_code_copy_p, alt_exit_tgt_p);
 
-    /* Hooking can only fail if there was a cti at the patch region.  There 
+    /* Hooking can only fail if there was a cti at the patch region.  There
      * better not be any there!
      */
     ASSERT(res != NULL);
@@ -8311,7 +8302,7 @@ get_segment_base(uint seg)
         return (byte *) POINTER_MAX;
 }
 
-/* i#572: handle opnd_compute_address to return the application 
+/* i#572: handle opnd_compute_address to return the application
  * segment base value.
  */
 byte *

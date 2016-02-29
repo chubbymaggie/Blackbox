@@ -6,18 +6,18 @@
 /*
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
- * 
+ *
  * * Redistributions of source code must retain the above copyright notice,
  *   this list of conditions and the following disclaimer.
- * 
+ *
  * * Redistributions in binary form must reproduce the above copyright notice,
  *   this list of conditions and the following disclaimer in the documentation
  *   and/or other materials provided with the distribution.
- * 
+ *
  * * Neither the name of VMware, Inc. nor the names of its contributors may be
  *   used to endorse or promote products derived from this software without
  *   specific prior written permission.
- * 
+ *
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
  * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
  * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
@@ -52,7 +52,7 @@
  * But if they add new non-subset flags in the future we'd need dynamic dispatch,
  * as earlier Windows versions give access denied on unknown flags!
  */
-#ifdef CROWD_SAFE_INTEGRATION
+#ifdef SECURITY_AUDIT
 # define NTDDI_WIN7 0x06010000
 # define _WIN32_WINNT_WIN7 0x0601
 # undef _WIN32_WINNT
@@ -123,13 +123,13 @@
 #    define DYNAMORIO_EXPORT __attribute__ ((visibility ("protected")))
 #  else
 /* visibility attribute not available in gcc < 3.3 (we use linker script) */
-#    define DYNAMORIO_EXPORT 
+#    define DYNAMORIO_EXPORT
 #  endif
 
 #ifdef DYNAMORIO_IR_EXPORTS
 #  define DR_API DYNAMORIO_EXPORT
 #else
-#  define DR_API 
+#  define DR_API
 #endif
 #ifdef UNSUPPORTED_API
 #  define DR_UNS_API DR_API
@@ -275,7 +275,7 @@ typedef struct _module_data_t module_data_t;
 /* DR_API EXPORT BEGIN */
 
 /**
- * Structure written by dr_get_time() to specify the current time. 
+ * Structure written by dr_get_time() to specify the current time.
  */
 typedef struct {
     uint year;         /**< */
@@ -293,7 +293,7 @@ typedef struct {
 struct _rct_module_table_t;
 typedef struct _rct_module_table_t rct_module_table_t;
 
-typedef enum { 
+typedef enum {
     RCT_RAC = 0,
     RCT_RCT,
     RCT_NUM_TYPES,
@@ -583,7 +583,7 @@ bool data_sections_enclose_region(app_pc start, app_pc end);
 #endif /* DEBUG */
 
 /* all the locks used to protect shared data structures during multi-operation
- * sequences, exported so that micro-operations can assert that one is held 
+ * sequences, exported so that micro-operations can assert that one is held
  */
 extern mutex_t bb_building_lock;
 extern volatile bool bb_lock_start;
@@ -591,7 +591,7 @@ extern recursive_lock_t change_linking_lock;
 
 /* where the current app thread's control is */
 typedef enum {
-    WHERE_APP=0, 
+    WHERE_APP=0,
     WHERE_INTERP,
     WHERE_DISPATCH,
     WHERE_MONITOR,
@@ -608,11 +608,11 @@ typedef enum {
     WHERE_LAST
 } where_am_i_t;
 
-/* make args easier to read for protection change calls 
+/* make args easier to read for protection change calls
  * since only two possibilities not using new type
  */
 enum {
-    READONLY=false, 
+    READONLY=false,
     WRITABLE=true
 };
 
@@ -659,15 +659,15 @@ typedef struct try_except_context_t {
  */
 typedef struct _try_except_t {
     try_except_context_t *try_except_state; /* for TRY/EXCEPT/FINALLY */
-    bool unwinding_exception;   /* NYI support for TRY/FINALLY - 
+    bool unwinding_exception;   /* NYI support for TRY/FINALLY -
                                  * marks exception until an EXCEPT handles */
 } try_except_t;
 
 extern try_except_t global_try_except;
 
 typedef struct {
-    /* WARNING: if you change the offsets of any of these fields, 
-     * you must also change the offsets in <arch>/<arch.s> 
+    /* WARNING: if you change the offsets of any of these fields,
+     * you must also change the offsets in <arch>/<arch.s>
      */
     priv_mcontext_t mcontext;        /* real machine context (in arch_exports.h) */
 #ifdef UNIX
@@ -686,7 +686,7 @@ typedef struct {
 #endif
 } unprotected_context_t;
 
-/* dynamo-specific context associated with each active app thread 
+/* dynamo-specific context associated with each active app thread
  * N.B.: make sure to update these routines as necessary if
  * you add or remove fields:
  *   create_new_dynamo_context
@@ -703,7 +703,7 @@ struct _dcontext_t {
      */
 
     /* WARNING: if you change the offsets of any of these fields, up through
-     * ignore_enterexit, you must also change the offsets in <arch>/<arch.s> 
+     * ignore_enterexit, you must also change the offsets in <arch>/<arch.s>
      */
 
     /* if SELFPROT_DCONTEXT, must split dcontext into unprotected and
@@ -712,7 +712,7 @@ struct _dcontext_t {
      * we waste sizeof(unprotected_context_t) bytes to provide runtime flexibility:
      */
     union {
-        /* we use separate_upcontext if 
+        /* we use separate_upcontext if
          *    (TEST(SELFPROT_DCONTEXT, dynamo_options.protect_mask))
          * else we use the inlined upcontext
          */
@@ -723,7 +723,7 @@ struct _dcontext_t {
      * a self-ptr (to inlined upcontext) or if we separate upcontext it points there.
      */
     unprotected_context_t *upcontext_ptr;
-    
+
     /* The next application pc to execute.
      * Also used to store the cache pc to execute when entering the code cache,
      * and set to the sentinel value BACK_TO_NATIVE_AFTER_SYSCALL for native_exec.
@@ -933,8 +933,8 @@ struct _dcontext_t {
     dr_jmp_buf_t   hotp_excpt_state;    /* To handle hot patch exceptions. */
 #endif
     try_except_t   try_except; /* for TRY/EXCEPT/FINALLY */
-    
-#ifdef WINDOWS                    
+
+#ifdef WINDOWS
     /* for ASLR_SHARED_CONTENT, note per callback, not per thread to
      * track properties of a syscall or a syscall pair.  Even we don't
      * expect to get APCs or callbacks while processing normal DLLs
@@ -970,8 +970,8 @@ struct _dcontext_t {
 #ifdef WINDOWS
     /* case 8721: saving the win32 start address so we can print it in the
      * ldmp.  An alternative solution is to call NtQueryInformationThread
-     * with ThreadQuerySetWin32StartAddress at dump time.  According to 
-     * Nebbet, however, a thread calling ZwReplyWaitReplyPort or 
+     * with ThreadQuerySetWin32StartAddress at dump time.  According to
+     * Nebbet, however, a thread calling ZwReplyWaitReplyPort or
      * ZwReplyWaitRecievePort will clobber the start address.
      */
     app_pc win32_start_addr;
@@ -996,7 +996,7 @@ struct _dcontext_t {
 };
 
 /* sentinel value for dcontext_t* used to indicate
- * "global rather than a particular thread" 
+ * "global rather than a particular thread"
  */
 #define GLOBAL_DCONTEXT  ((dcontext_t *)PTR_UINT_MINUS_1)
 
@@ -1010,7 +1010,7 @@ get_mcontext(dcontext_t *dcontext)
         return &(dcontext->upcontext.upcontext.mcontext);
 }
 
-/* A number of routines (dump_mbi*, dump_mcontext, dump_callstack, 
+/* A number of routines (dump_mbi*, dump_mcontext, dump_callstack,
  * print_modules) have an argument on whether to dump in an xml friendly format
  * (for xml diagnostics files). We use these defines for readability. */
 enum {

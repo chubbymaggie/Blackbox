@@ -6,18 +6,18 @@
 /*
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
- * 
+ *
  * * Redistributions of source code must retain the above copyright notice,
  *   this list of conditions and the following disclaimer.
- * 
+ *
  * * Redistributions in binary form must reproduce the above copyright notice,
  *   this list of conditions and the following disclaimer in the documentation
  *   and/or other materials provided with the distribution.
- * 
+ *
  * * Neither the name of VMware, Inc. nor the names of its contributors may be
  *   used to endorse or promote products derived from this software without
  *   specific prior written permission.
- * 
+ *
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
  * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
  * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
@@ -37,7 +37,7 @@
 
 /* file "arch_exports.h" -- x86-specific exported declarations
  *
- * References: 
+ * References:
  *   "Intel Architecture Software Developer's Manual", 1999.
  */
 
@@ -75,7 +75,7 @@ typedef enum {
     IBL_INDCALL,
     IBL_INDJMP,
     IBL_GENERIC           = IBL_INDJMP, /* currently least restrictive */
-    /* can double if a generic lookup is needed 
+    /* can double if a generic lookup is needed
        FIXME: remove this and add names for specific needs */
     IBL_SHARED_SYSCALL    = IBL_GENERIC,
     IBL_BRANCH_TYPE_END
@@ -137,22 +137,17 @@ typedef struct _local_state_t {
     spill_state_t spill_space;
 } local_state_t;
 
-#ifdef CROWD_SAFE
+#ifdef SECURITY_AUDIT
 typedef struct _shadow_stack_frame_t {
     app_pc return_address;
-    app_pc base_pointer; // using %rsp b/c gcc doesn't always maintain %rbp
+    app_pc base_pointer;
 } shadow_stack_frame_t;
-
-typedef struct _resolved_import_t {
-    char *name;
-    app_pc address;
-} resolved_import_t;
 
 // x64: 60 bytes: 1 cache line
 // x86: 40 bytes
 typedef struct _ibp_metadata_t {
     uint64 hash_mask;
-    uint64 *lookuptable; 
+    uint64 *lookuptable;
     uint flags;
     app_pc ibp_from_tag;
     app_pc ibp_to_tag;
@@ -163,23 +158,20 @@ typedef struct _ibp_metadata_t {
 
 // x64: 96 bytes: 2 cache lines
 // x86: 56 bytes: 1 cache line
-// cs-todo: consolidate `dst`, `pending_syscalls`, etc--avoid cluttering the cache line
-typedef struct _local_crowd_safe_data_t {
+typedef struct _local_security_audit_state_t {
     void *crowd_safe_thread_local;
-#ifdef CROWD_SAFE_DYNAMIC_IMPORTS    
-    resolved_import_t *resolved_imports;
-#endif
     shadow_stack_frame_t *shadow_stack;
     shadow_stack_frame_t *shadow_stack_miss_frame;
     uint stack_spy_mark;
     ibp_metadata_t ibp_data;
-} local_crowd_safe_data_t;
-#endif 
+} local_security_audit_state_t;
+#endif
+
 typedef struct _local_state_extended_t {
     spill_state_t spill_space;
     table_stat_state_t table_space;
-#ifdef CROWD_SAFE
-    local_crowd_safe_data_t crowd_safe_data;
+#ifdef SECURITY_AUDIT
+    _local_security_audit_state_t security_audit_state;
 #endif
 } local_state_extended_t;
 
@@ -194,71 +186,58 @@ typedef struct _local_state_extended_t {
 #define TLS_DCONTEXT_SLOT        ((ushort)offsetof(spill_state_t, dcontext))
 
 #define TABLE_OFFSET             (offsetof(local_state_extended_t, table_space))
-#define TLS_MASK_SLOT(btype)     ((ushort)(TABLE_OFFSET                         \
-                                  + offsetof(table_stat_state_t, table[btype])  \
+#define TLS_MASK_SLOT(btype)     ((ushort)(TABLE_OFFSET                                \
+                                  + offsetof(table_stat_state_t, table[btype])         \
                                   + offsetof(lookup_table_access_t, hash_mask)))
-#define TLS_TABLE_SLOT(btype)    ((ushort)(TABLE_OFFSET                         \
-                                  + offsetof(table_stat_state_t, table[btype])  \
+#define TLS_TABLE_SLOT(btype)    ((ushort)(TABLE_OFFSET                                \
+                                  + offsetof(table_stat_state_t, table[btype])         \
                                   + offsetof(lookup_table_access_t, lookuptable)))
-#ifdef CROWD_SAFE                        
-#define CROWD_SAFE_DATA_OFFSET           (offsetof(local_state_extended_t, crowd_safe_data))
-#define TLS_DST_STACK                    ((ushort)(CROWD_SAFE_DATA_OFFSET                     \
-                                          + offsetof(local_crowd_safe_data_t, dst)))
-#define TLS_LINK_TRACKER                 ((ushort)(CROWD_SAFE_DATA_OFFSET                     \
-                                          + offsetof(local_crowd_safe_data_t, link_tracker)))
-#define TLS_PENDING_SYSCALL              ((ushort)(CROWD_SAFE_DATA_OFFSET                     \
-                                          + offsetof(local_crowd_safe_data_t, pending_syscall)))
+#ifdef SECURITY_AUDIT
+#define SECURITY_AUDIT_STATE_OFFSET  (offsetof(local_state_extended_t,                 \
+                                               security_audit_state))
+#define TLS_SHADOW_STACK_POINTER     ((ushort)(SECURITY_AUDIT_STATE_OFFSET +           \
+                                               offsetof(local_security_audit_state_t,  \
+                                                 shadow_stack)))
+#define TLS_SS_MISS_FRAME            ((ushort)(SECURITY_AUDIT_STATE_OFFSET +           \
+                                               offsetof(local_security_audit_state_t,  \
+                                               shadow_stack_miss_frame)))
+#define TLS_STACK_SPY_MARK            ((ushort)(SECURITY_AUDIT_STATE_OFFSET +          \
+                                                offsetof(local_security_audit_state_t, \
+                                                stack_spy_mark)))
 
-#ifdef CROWD_SAFE_DYNAMIC_IMPORTS                                          
-#define TLS_RESOLVED_IMPORTS             ((ushort)(CROWD_SAFE_DATA_OFFSET                     \
-                                          + offsetof(local_crowd_safe_data_t, resolved_imports)))
+#define TLS_IBP_DATA                 ((ushort)(SECURITY_AUDIT_STATE_OFFSET +           \
+                                               offsetof(local_security_audit_state_t,  \
+                                               ibp_data)))
+#define TLS_IBP_MASK_SLOT            ((ushort)(TLS_IBP_DATA +                          \
+                                               offsetof(ibp_metadata_t, hash_mask)))
+#define TLS_IBP_SLOT                 ((ushort)(TLS_IBP_DATA +                          \
+                                               offsetof(ibp_metadata_t, lookuptable)))
+#define TLS_IBP_FLAGS                ((ushort)(TLS_IBP_DATA +                          \
+                                               offsetof(ibp_metadata_t, flags)))
+#define TLS_IBP_FROM_TAG             ((ushort)(TLS_IBP_DATA +                          \
+                                               offsetof(ibp_metadata_t, ibp_from_tag)))
+#define TLS_IBP_TO_TAG               ((ushort)(TLS_IBP_DATA +                          \
+                                               offsetof(ibp_metadata_t, ibp_to_tag)))
+#define TLS_SYSCALL_FROM_TAG         ((ushort)(TLS_IBP_DATA +                          \
+                                               offsetof(ibp_metadata_t,                \
+                                                        syscall_from_tag)))
+#ifdef X64
+# define TLS_IBP_FROM_TAG_HIGH       ((ushort)(TLS_IBP_DATA +                          \
+                                               offsetof(ibp_metadata_t,                \
+                                                        ibp_from_tag) + 4))
+# define TLS_IBP_TO_TAG_HIGH         ((ushort)(TLS_IBP_DATA +                          \
+                                               offsetof(ibp_metadata_t,                \
+                                                        ibp_to_tag) + 4))
+# define TLS_SYSCALL_FROM_TAG_HIGH   ((ushort)(TLS_IBP_DATA +                          \
+                                                offsetof(ibp_metadata_t,               \
+                                                         syscall_from_tag) + 4))
+#endif
+#define TLS_XDX_TEMP                 ((ushort)(TLS_IBP_DATA +                          \
+                                               offsetof(ibp_metadata_t, xdx_temp_slot)))
+#define TLS_XSI_TEMP                 ((ushort)(TLS_IBP_DATA +                          \
+                                               offsetof(ibp_metadata_t, xsi_temp_slot)))
 #endif
 
-#define TLS_SHADOW_STACK_POINTER         ((ushort)(CROWD_SAFE_DATA_OFFSET                     \
-                                          + offsetof(local_crowd_safe_data_t, shadow_stack)))
-#define TLS_SS_MISS_FRAME                ((ushort)(CROWD_SAFE_DATA_OFFSET                     \
-                                          + offsetof(local_crowd_safe_data_t, shadow_stack_miss_frame)))
-#define TLS_STACK_SPY_MARK                ((ushort)(CROWD_SAFE_DATA_OFFSET                     \
-                                          + offsetof(local_crowd_safe_data_t, stack_spy_mark)))
-                                         
-#define TLS_IBP_DATA                     ((ushort)(CROWD_SAFE_DATA_OFFSET                     \
-                                          + offsetof(local_crowd_safe_data_t, ibp_data)))
-#define TLS_IBP_MASK_SLOT                ((ushort)(TLS_IBP_DATA                              \
-                                          + offsetof(ibp_metadata_t, hash_mask)))
-#define TLS_IBP_SLOT                     ((ushort)(TLS_IBP_DATA                              \
-                                          + offsetof(ibp_metadata_t, lookuptable)))
-#define TLS_IBP_FLAGS                    ((ushort)(TLS_IBP_DATA                              \
-                                          + offsetof(ibp_metadata_t, flags)))
-#define TLS_IBP_FROM_TAG                 ((ushort)(TLS_IBP_DATA                              \
-                                          + offsetof(ibp_metadata_t, ibp_from_tag)))
-#define TLS_IBP_TO_TAG                   ((ushort)(TLS_IBP_DATA                              \
-                                          + offsetof(ibp_metadata_t, ibp_to_tag)))
-#define TLS_SYSCALL_FROM_TAG             ((ushort)(TLS_IBP_DATA                              \
-                                          + offsetof(ibp_metadata_t, syscall_from_tag)))
-#ifdef X64                               
-# define TLS_IBP_FROM_TAG_HIGH            ((ushort)(TLS_IBP_DATA                              \
-                                          + offsetof(ibp_metadata_t, ibp_from_tag) + 4))
-#define TLS_IBP_TO_TAG_HIGH              ((ushort)(TLS_IBP_DATA                              \
-                                          + offsetof(ibp_metadata_t, ibp_to_tag) + 4))
-#define TLS_SYSCALL_FROM_TAG_HIGH         ((ushort)(TLS_IBP_DATA                              \
-                                          + offsetof(ibp_metadata_t, syscall_from_tag) + 4))
-#endif                                   
-#define TLS_XDX_TEMP                     ((ushort)(TLS_IBP_DATA                              \
-                                          + offsetof(ibp_metadata_t, xdx_temp_slot)))
-#define TLS_XSI_TEMP                     ((ushort)(TLS_IBP_DATA                              \
-                                          + offsetof(ibp_metadata_t, xsi_temp_slot)))
-#endif 
-
-/*
-#define TLS_IBP_MASK_SLOT        (ushort)0
-#define TLS_IBP_MASK_SLOT        (ushort)0
-#define TLS_IBP_SLOT             (ushort)0
-#define TLS_IBP_FROM_TAG         (ushort)0
-#define TLS_IBP_TO_TAG           (ushort)0
-#define TLS_IBP_IS_NEW           (ushort)0
-#define TLS_XDX_TEMP             (ushort)0
-*/
-  
 #ifdef HASHTABLE_STATISTICS
 # define TLS_HTABLE_STATS_SLOT   ((ushort)(offsetof(local_state_extended_t,     \
                                                     table_space)                \
@@ -299,30 +278,30 @@ emit_detach_callback_final_jmp(dcontext_t *dcontext,
 #endif
 
 /* We use this to ensure that linking and unlinking is atomic with respect
- * to a thread in the cache, this is needed for our current flushing 
- * implementation.  Note that linking and unlinking are only atomic with 
- * respect to a thread in the cache not with respect to a thread in dynamorio 
+ * to a thread in the cache, this is needed for our current flushing
+ * implementation.  Note that linking and unlinking are only atomic with
+ * respect to a thread in the cache not with respect to a thread in dynamorio
  * (which can see linking flags etc.)
- */ 
+ */
 /* see bug 524 for additional notes, reproduced here :
- * there is no way to do a locked mov, have to use an xchg or similar which is 
+ * there is no way to do a locked mov, have to use an xchg or similar which is
  * a larger performance penalty (not really an issue), note that xchg implies
  * lock, so no need for the lock prefix below
  *
- * further Intel's documentation is a little weird on the issue of 
- * cross-modifying code (see IA32 volume 3 7-2 through 7-7), "Locked 
- * instructions should not be used to insure that data written can be fetched 
+ * further Intel's documentation is a little weird on the issue of
+ * cross-modifying code (see IA32 volume 3 7-2 through 7-7), "Locked
+ * instructions should not be used to insure that data written can be fetched
  * as instructions" and "Locked operations are atomic with respect to all other
  * memory operations and all externally visible events.  Only instruction fetch
  * and page table access can pass locked instructions", (pass?) however it does
- * note that the current versions of P6 family, pentium 4, xeon, pentium and 
+ * note that the current versions of P6 family, pentium 4, xeon, pentium and
  * 486 allow data written by locked instructions to be fetched as instructions.
- * In the cross-modifying code section, however, it gives a (horrible for us) 
- * algorithm to ensure cross-modifying code is compliant with current and 
- * future versions of IA-32 then says that "the use of this option is not 
- * required for programs intended to run on the 486, but is recommended to 
- * insure compatibility with pentium 4, xeon, P6 family and pentium 
- * processors", so my take home is that it works now, but don't have any 
+ * In the cross-modifying code section, however, it gives a (horrible for us)
+ * algorithm to ensure cross-modifying code is compliant with current and
+ * future versions of IA-32 then says that "the use of this option is not
+ * required for programs intended to run on the 486, but is recommended to
+ * insure compatibility with pentium 4, xeon, P6 family and pentium
+ * processors", so my take home is that it works now, but don't have any
  * expectations for the future - FIXME - */
 /* Ref case 3628, case 4397, empirically this only works for code where the
  * entire offset being written is within a cache line, so we can't use a locked
@@ -428,7 +407,7 @@ static inline bool atomic_compare_exchange_int(volatile int *var,
 }
 static inline bool atomic_compare_exchange_int64(volatile int64 *var,
                                                  int64 compare, int64 exchange) {
-    return ((ptr_int_t)ATOMIC_COMPARE_EXCHANGE_int64(*(var), compare, exchange) == 
+    return ((ptr_int_t)ATOMIC_COMPARE_EXCHANGE_int64(*(var), compare, exchange) ==
             (compare));
 }
 /* atomically adds value to memory location var and returns the sum */
@@ -528,7 +507,7 @@ static inline int64 atomic_add_exchange_int64(volatile int64 *var, int64 value) 
 
 /* Atomically increments *var by 1
  * Returns true if the resulting value is zero, otherwise returns false
- */ 
+ */
 static inline bool atomic_inc_and_test(volatile int *var)
 {
     unsigned char c;
@@ -536,14 +515,14 @@ static inline bool atomic_inc_and_test(volatile int *var)
     ATOMIC_INC(int, *var);
     /* flags should be set according to resulting value, now we convert that back to C */
     SET_IF_NOT_ZERO(c);
-    /* FIXME: we add an extra memory reference to a local, 
+    /* FIXME: we add an extra memory reference to a local,
        although we could put the return value in EAX ourselves */
     return c == 0;
 }
 
 /* Atomically decrements *var by 1
  * Returns true if the initial value was zero, otherwise returns false
- */ 
+ */
 static inline bool atomic_dec_and_test(volatile int *var)
 {
     unsigned char c;
@@ -551,14 +530,14 @@ static inline bool atomic_dec_and_test(volatile int *var)
     ATOMIC_DEC(int, *var);
     /* result should be set according to value before change, now we convert that back to C */
     SET_IF_NOT_LESS(c);
-    /* FIXME: we add an extra memory reference to a local, 
+    /* FIXME: we add an extra memory reference to a local,
        although we could put the return value in EAX ourselves */
     return c == 0;
 }
 
 /* Atomically decrements *var by 1
  * Returns true if the resulting value is zero, otherwise returns false
- */ 
+ */
 static inline bool atomic_dec_becomes_zero(volatile int *var)
 {
     unsigned char c;
@@ -566,15 +545,15 @@ static inline bool atomic_dec_becomes_zero(volatile int *var)
     ATOMIC_DEC(int, *var);
     /* result should be set according to value after change, now we convert that back to C */
     SET_IF_NOT_ZERO(c);
-    /* FIXME: we add an extra memory reference to a local, 
+    /* FIXME: we add an extra memory reference to a local,
        although we could put the return value in EAX ourselves */
     return c == 0;
 }
 
 
-/* returns true if var was equal to compare, and now is equal to exchange, 
+/* returns true if var was equal to compare, and now is equal to exchange,
    otherwise returns false
- */ 
+ */
 static inline bool atomic_compare_exchange_int(volatile int *var,
                                                int compare, int exchange)
 {
@@ -583,7 +562,7 @@ static inline bool atomic_compare_exchange_int(volatile int *var,
     /* ZF is set if matched, all other flags are as if a normal compare happened */
     /* we convert ZF value back to C */
     SET_IF_NOT_ZERO(c);
-    /* FIXME: we add an extra memory reference to a local, 
+    /* FIXME: we add an extra memory reference to a local,
        although we could put the return value in EAX ourselves */
     return c == 0;
 }
@@ -598,9 +577,9 @@ atomic_exchange_int(volatile int *var, int newval)
 }
 
 #ifdef X64
-/* returns true if var was equal to compare, and now is equal to exchange, 
+/* returns true if var was equal to compare, and now is equal to exchange,
    otherwise returns false
- */ 
+ */
 static inline bool atomic_compare_exchange_int64(volatile int64 *var,
                                                  int64 compare,
                                                  int64 exchange)
@@ -610,7 +589,7 @@ static inline bool atomic_compare_exchange_int64(volatile int64 *var,
     /* ZF is set if matched, all other flags are as if a normal compare happened */
     /* we convert ZF value back to C */
     SET_IF_NOT_ZERO(c);
-    /* FIXME: we add an extra memory reference to a local, 
+    /* FIXME: we add an extra memory reference to a local,
        although we could put the return value in EAX ourselves */
     return c == 0;
 }
@@ -684,9 +663,9 @@ static inline int64 atomic_add_exchange_int64(volatile int64 *var, int64 value)
 
 /* if hot_patch is true:
  *   The write that inserts the relative target is done atomically so this
- *   function is safe with respect to a thread executing the code containing 
+ *   function is safe with respect to a thread executing the code containing
  *   this target, presuming that the code in both the before and after states
- *   is valid 
+ *   is valid
  */
 byte *
 insert_relative_target(byte *pc, cache_pc target, bool hot_patch);
@@ -710,7 +689,7 @@ void arch_init(void);
 void arch_exit(IF_WINDOWS_ELSE_NP(bool detach_stacked_callbacks, void));
 void arch_thread_init(dcontext_t *dcontext);
 void arch_thread_exit(dcontext_t *dcontext _IF_WINDOWS(bool detach_stacked_callbacks));
-#if defined(WINDOWS_PC_SAMPLE) && !defined(DEBUG) 
+#if defined(WINDOWS_PC_SAMPLE) && !defined(DEBUG)
 /* for sampling fast exit path */
 void arch_thread_profile_exit(dcontext_t *dcontext);
 void arch_profile_exit(void);
@@ -771,7 +750,7 @@ typedef enum {
     RECREATE_SUCCESS_STATE,
 } recreate_success_t;
 
-recreate_success_t 
+recreate_success_t
 recreate_app_state(dcontext_t *tdcontext, priv_mcontext_t *mcontext, bool restore_memory,
                    fragment_t *f);
 
@@ -826,7 +805,7 @@ cache_pc get_do_clone_syscall_entry(dcontext_t *dcontext);
 cache_pc get_do_vmkuw_syscall_entry(dcontext_t *dcontext);
 # endif
 #endif
-#ifdef CROWD_SAFE_INTEGRATION
+#ifdef SECURITY_AUDIT
 cache_pc get_do_throw_exception_entry(dcontext_t *dcontext);
 #endif
 byte * get_global_do_syscall_entry(void);
@@ -892,7 +871,7 @@ bool should_syscall_method_be_sysenter(void);
 #endif
 /* returns the address of the first app syscall instruction we saw (see hack
  * in win32/os.c that uses this for PRE_SYSCALL_PC, not for general use */
-byte *get_app_sysenter_addr(void); 
+byte *get_app_sysenter_addr(void);
 
 /* in x86.asm */
 void call_switch_stack(dcontext_t *dcontext, byte *stack, void (*func) (dcontext_t *),
@@ -1028,7 +1007,7 @@ use_addr_prefix_on_short_disp(void)
     return false;
 #else
     /* -ibl_addr_prefix => addr prefix everywhere */
-    return (DYNAMO_OPTION(ibl_addr_prefix) || 
+    return (DYNAMO_OPTION(ibl_addr_prefix) ||
             /* PR 212807, PR 209709: addr prefix is noticeably worse
              * on Pentium M, Core, and Core2.
              * It's better on Pentium 4 and Pentium D.
@@ -1048,7 +1027,7 @@ use_addr_prefix_on_short_disp(void)
     /* FIXME: should similarly remove addr prefixes from hardcoded
      * emits in emit_utils.c, except in cases where space is more
      * important than speed.
-     * FIXME: case 5231 long term solution should properly choose 
+     * FIXME: case 5231 long term solution should properly choose
      * - ibl - speed
      * - prefixes - speed/space?
      * - app code - preserverd since we normally don't need to reencode,
@@ -1123,10 +1102,10 @@ use_addr_prefix_on_short_disp(void)
 /* coarse-grain stubs use a store directly to memory so they can
  * link through the stub and not mess up app state.
  * 1st instr example:
- *   67 64 c7 06 e0 0e 02 99 4e 7d  addr16 mov $0x7d4e9902 -> %fs:0x0ee0 
+ *   67 64 c7 06 e0 0e 02 99 4e 7d  addr16 mov $0x7d4e9902 -> %fs:0x0ee0
  * 64-bit is split into high and low dwords:
- *   65 c7 04 25 20 16 00 00 02 99 4e 7d  mov $0x7d4e9902 -> %gs:0x1620 
- *   65 c7 04 25 24 16 00 00 00 00 00 00  mov $0x00000000 -> %gs:0x1624 
+ *   65 c7 04 25 20 16 00 00 02 99 4e 7d  mov $0x7d4e9902 -> %gs:0x1620
+ *   65 c7 04 25 24 16 00 00 00 00 00 00  mov $0x00000000 -> %gs:0x1624
  * both of these exact sequences are assumed in entrance_stub_target_tag()
  * and coarse_indirect_stub_jmp_target().
  */
@@ -1176,35 +1155,35 @@ use_addr_prefix_on_short_disp(void)
         STATS_ADD(pad_jmps_bb_##stat, val);               \
 })
 
-bool 
-is_exit_cti_stub_patchable(dcontext_t *dcontext, instr_t *inst, 
+bool
+is_exit_cti_stub_patchable(dcontext_t *dcontext, instr_t *inst,
                            uint frag_flags);
 
 uint
 extend_trace_pad_bytes(fragment_t *add_frag);
 
-uint 
+uint
 patchable_exit_cti_align_offs(dcontext_t *dcontext, instr_t *inst, cache_pc pc);
 
-bool 
+bool
 is_patchable_exit_stub(dcontext_t *dcontext, linkstub_t *l, fragment_t *f);
 
-uint 
+uint
 bytes_for_exitstub_alignment(dcontext_t *dcontext, linkstub_t *l, fragment_t *f,
                              byte *startpc);
 
-byte * 
-pad_for_exitstub_alignment(dcontext_t *dcontext, linkstub_t *l, fragment_t *f, 
+byte *
+pad_for_exitstub_alignment(dcontext_t *dcontext, linkstub_t *l, fragment_t *f,
                            byte *startpc);
 
-void 
-remove_nops_from_ilist(dcontext_t *dcontext, instrlist_t *ilist 
+void
+remove_nops_from_ilist(dcontext_t *dcontext, instrlist_t *ilist
                        _IF_DEBUG(bool recreating));
 
-uint 
+uint
 nop_pad_ilist(dcontext_t *dcontext, fragment_t *f, instrlist_t *ilist, bool emitting);
 
-bool 
+bool
 is_exit_cti_patchable(dcontext_t *dcontext, instr_t *inst, uint frag_flags);
 
 int exit_stub_size(dcontext_t *dcontext, cache_pc target, uint flags);
@@ -1398,7 +1377,7 @@ is_jmp_rel8(byte *code_buf, app_pc app_loc, app_pc *jmp_target /* OUT */);
  *    +195  L3  65 48 a1 00 00 00 00 mov    %gs:0x00 -> %rax
  *              00 00 00 00
  *    +206
- *   
+ *
  *    (36-19)=17 vs (206-120)=86 => 69 bytes.  was 65 bytes prior to PR 209709!
  *    usually 3 bytes smaller since don't need to restore eflags.
  */
@@ -1426,7 +1405,7 @@ uint
 instr_eflags_to_fragment_eflags(uint instr_eflags);
 
 
-instrlist_t * 
+instrlist_t *
 decode_fragment(dcontext_t *dcontext, fragment_t *f, byte *buf, /*OUT*/uint *bufsz,
                 uint target_flags, /*OUT*/uint *dir_exits, /*OUT*/uint *indir_exits);
 
@@ -1527,11 +1506,11 @@ get_x86_mode(dcontext_t *dcontext);
 /* DR_API EXPORT TOFILE dr_ir_instr.h */
 DR_API
 /** Returns true iff \p instr can be encoding as a valid IA-32 instruction. */
-bool 
+bool
 instr_is_encoding_possible(instr_t *instr);
 
 DR_API
-/** 
+/**
  * Encodes \p instr into the memory at \p pc.
  * Uses the x86/x64 mode stored in instr, not the mode of the current thread.
  * Returns the pc after the encoded instr, or NULL if the encoding failed.
@@ -1541,11 +1520,11 @@ DR_API
  * x86 instructions can occupy up to 17 bytes, so the caller should ensure
  * the target location has enough room to avoid overflow.
  */
-byte * 
+byte *
 instr_encode(dcontext_t *dcontext, instr_t *instr, byte *pc);
 
 DR_API
-/** 
+/**
  * Encodes \p instr into the memory at \p copy_pc in preparation for copying
  * to \p final_pc.  Any pc-relative component is encoded as though the
  * instruction were located at \p final_pc.  This allows for direct copying
@@ -1559,13 +1538,13 @@ DR_API
  * x86 instructions can occupy up to 17 bytes, so the caller should ensure
  * the target location has enough room to avoid overflow.
  */
-byte * 
+byte *
 instr_encode_to_copy(dcontext_t *dcontext, instr_t *instr, byte *copy_pc,
                      byte *final_pc);
 
 /* DR_API EXPORT TOFILE dr_ir_instrlist.h */
 DR_API
-/** 
+/**
  * Encodes each instruction in \p ilist in turn in contiguous memory starting
  * at \p pc.  Returns the pc after all of the encodings, or NULL if any one
  * of the encodings failed.
@@ -1583,7 +1562,7 @@ instrlist_encode(dcontext_t *dcontext, instrlist_t *ilist, byte *pc,
                  bool has_instr_jmp_targets);
 
 DR_API
-/** 
+/**
  * Encodes each instruction in \p ilist in turn in contiguous memory
  * starting \p copy_pc in preparation for copying to \p final_pc.  Any
  * pc-relative instruction is encoded as though the instruction list were
@@ -1638,7 +1617,7 @@ bool is_observed_call_site(dcontext_t *dcontext, app_pc retaddr);
 /* in optimize.c */
 void optimize_trace(dcontext_t *dcontext, app_pc tag, instrlist_t *trace);
 #ifdef DEBUG
-void print_optimization_stats(void); 
+void print_optimization_stats(void);
 #endif
 
 #ifdef SIDELINE
@@ -1685,7 +1664,7 @@ bool is_ibl_routine_type(dcontext_t *dcontext, cache_pc target, ibl_branch_type_
  */
 /* on x86 function pointers and data pointers are interchangeable */
 
-static inline 
+static inline
 generic_func_t
 convert_data_to_function(void *data_ptr)
 {
@@ -1706,8 +1685,8 @@ convert_data_to_function(void *data_ptr)
  * used here.  TODO: we could use it and live with the wastage?
  * Espcially in light of the merging from PR 218131.
  *
- * edx & eax need not be saved because they are scratch registers in a 
- * call, i.e., caller-save;  they are used to return values from functions.  
+ * edx & eax need not be saved because they are scratch registers in a
+ * call, i.e., caller-save;  they are used to return values from functions.
  * As longjmp is implemented as return from setjmp, eax & edx need not be saved.
  */
 typedef struct dr_jmp_buf_t {
@@ -1731,9 +1710,9 @@ typedef struct dr_jmp_buf_t {
 #endif
 } dr_jmp_buf_t;
 /* in x86.asm */
-int 
+int
 dr_longjmp(dr_jmp_buf_t *buf, int val);
-int 
+int
 dr_setjmp(dr_jmp_buf_t *buf);
 
 /* Fast asm-based safe read, but requires fault handling to be set up */

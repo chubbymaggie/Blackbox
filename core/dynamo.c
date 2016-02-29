@@ -6,18 +6,18 @@
 /*
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
- * 
+ *
  * * Redistributions of source code must retain the above copyright notice,
  *   this list of conditions and the following disclaimer.
- * 
+ *
  * * Redistributions in binary form must reproduce the above copyright notice,
  *   this list of conditions and the following disclaimer in the documentation
  *   and/or other materials provided with the distribution.
- * 
+ *
  * * Neither the name of VMware, Inc. nor the names of its contributors may be
  *   used to endorse or promote products derived from this software without
  *   specific prior written permission.
- * 
+ *
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
  * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
  * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
@@ -66,10 +66,7 @@
 
 #include <string.h>
 
-#ifdef CROWD_SAFE
-#include "../ext/link-observer/link_observer.h"
-#include "../ext/link-observer/module_observer.h"
-#include "../ext/link-observer/crowd_safe_util.h"
+#ifdef SECURITY_AUDIT
 file_t early_logfile = INVALID_FILE;
 #endif
 
@@ -253,11 +250,11 @@ thread_record_t ** all_threads; /* ALL_THREADS_HASH_BITS-bit addressed hash tabl
 
 /* these locks are used often enough that we put them in .cspdata: */
 
-/* not static so can be referenced in win32/os.c for SuspendThread handling, 
+/* not static so can be referenced in win32/os.c for SuspendThread handling,
  * FIXME : is almost completely redundant in usage with thread_initexit_lock
  * maybe replace this lock with thread_initexit_lock? */
 DECLARE_CXTSWPROT_VAR(mutex_t all_threads_lock, INIT_LOCK_FREE(all_threads_lock));
-/* used for synch to prevent thread creation/deletion in critical periods 
+/* used for synch to prevent thread creation/deletion in critical periods
  * due to its use for flushing, this lock cannot be held while couldbelinking!
  */
 DECLARE_CXTSWPROT_VAR(mutex_t thread_initexit_lock,
@@ -266,8 +263,6 @@ DECLARE_CXTSWPROT_VAR(mutex_t thread_initexit_lock,
 /* recursive to handle signals/exceptions while in DR code */
 DECLARE_CXTSWPROT_VAR(static recursive_lock_t thread_in_DR_exclusion,
                       INIT_RECURSIVE_LOCK(thread_in_DR_exclusion));
-
-uint64 process_start_time;
 
 /****************************************************************************/
 #ifdef DEBUG
@@ -362,15 +357,14 @@ get_dr_stats(void)
 
 /* initialize per-process dynamo state; this must be called before any
  * threads are created and before any other API calls are made;
- * returns zero on success, non-zero on failure 
+ * returns zero on success, non-zero on failure
  */
 DYNAMORIO_EXPORT int
 dynamorio_app_init(void)
 {
     int size;
-#ifdef CROWD_SAFE
-    process_start_time = dr_get_milliseconds();
-    init_crowd_safe_log(false);
+#ifdef SECURITY_AUDIT
+    audit_init_log(false/*not fork*/);
 #endif
 
     if (!dynamo_initialized /* we do enter if nullcalls is on */) {
@@ -417,9 +411,9 @@ dynamorio_app_init(void)
 
         config_init();
         options_init();
-#if defined(DEBUG) && defined(CROWD_SAFE)
+#if defined(DEBUG) && defined(SECURITY_AUDIT)
         if (stats->loglevel > 0) {
-            main_logfile = create_early_dr_log();
+            main_logfile = audit_create_logfile();
             early_logfile = main_logfile;
         }
 #endif
@@ -431,7 +425,7 @@ dynamorio_app_init(void)
         data_section_init();
 
 #ifdef DEBUG
-# ifdef CROWD_SAFE
+# ifdef SECURITY_AUDIT
         if (stats->loglevel > 0) {
             main_logfile = INVALID_FILE;
         }
@@ -488,7 +482,7 @@ dynamorio_app_init(void)
         /* PR 200207: load the client lib before callback_interception_init
          * since the client library load would hit our own hooks (xref hotpatch
          * cases about that) -- though -private_loader removes that issue. */
-        /* Must be before [vmm_]heap_init() so we can register the client lib as 
+        /* Must be before [vmm_]heap_init() so we can register the client lib as
          * reachable from the dr heap. Xref PR 215395. */
         instrument_load_client_libs();
 #endif
@@ -498,8 +492,8 @@ dynamorio_app_init(void)
         heap_init();
         dynamo_heap_initialized = true;
 
-#ifdef CROWD_SAFE_INTEGRATION
-        init_link_observer(GLOBAL_DCONTEXT, false);
+#ifdef SECURITY_AUDIT
+        audit_init(GLOBAL_DCONTEXT, false);
 #endif
 
         /* The process start event should be done after os_init() but before
@@ -516,7 +510,7 @@ dynamorio_app_init(void)
         if (IS_PROCESS_CONTROL_ON())    /* Case 8594. */
             process_control_init();
 #endif
-                    
+
 #ifdef WINDOWS
         /* Now that DR is set up, perform any final clean-up, before
          * we do our address space scans.
@@ -532,7 +526,7 @@ dynamorio_app_init(void)
         config_heap_init(); /* after heap_init */
 
         /* Setup for handling faults in loader_init() */
-        /* initial stack so we don't have to use app's 
+        /* initial stack so we don't have to use app's
          * N.B.: we never de-allocate initstack (see comments in app_exit)
          */
         initstack = (byte *) stack_alloc(DYNAMORIO_STACK_SIZE);
@@ -574,8 +568,8 @@ dynamorio_app_init(void)
         perscache_init(); /* before vm_areas_init */
         native_exec_init(); /* before vm_areas_init, after arch_init */
 
-#ifdef CROWD_SAFE_INTEGRATION
-        notify_dynamo_model_initialized();
+#ifdef SECURITY_AUDIT
+        audit_dynamo_model_initialized();
 #endif
 
         if (!DYNAMO_OPTION(thin_client)) {
@@ -589,7 +583,7 @@ dynamorio_app_init(void)
 #ifdef INTERNAL
         {
             char initial_options[MAX_OPTIONS_STRING];
-            get_dynamo_options_string(&dynamo_options, 
+            get_dynamo_options_string(&dynamo_options,
                                       initial_options, sizeof(initial_options), true);
             SYSLOG_INTERNAL_INFO("Initial options = %s", initial_options);
             DOLOG(1, LOG_TOP, {
@@ -606,9 +600,9 @@ dynamorio_app_init(void)
 
         /* initialize thread hashtable */
         /* Note: for thin_client, this isn't needed if it is only going to
-         * look for spawned processes; however, if we plan to promote from 
+         * look for spawned processes; however, if we plan to promote from
          * thin_client to hotp_only mode (highly likely), this would be needed.
-         * For now, leave it in there unless thin_client footprint becomes an 
+         * For now, leave it in there unless thin_client footprint becomes an
          * issue.
          */
         size = HASHTABLE_SIZE(ALL_THREADS_HASH_BITS) * sizeof(thread_record_t*);
@@ -712,8 +706,8 @@ dynamorio_app_init(void)
 #endif
     }
 
-#ifdef CROWD_SAFE_INTEGRATION
-    notify_dynamo_initialized();
+#ifdef SECURITY_AUDIT
+    audit_dynamo_model_initalized();
 #endif
 
     dynamo_initialized = true;
@@ -733,9 +727,9 @@ dynamorio_app_init(void)
         destroy_event(never_signaled);
     }
 
-#ifdef CROWD_SAFE
+#ifdef SECURITY_AUDIT
         if (stats->loglevel > 0)
-            dr_close_file(early_logfile);
+            audit_close_logfile();
 #endif
 
     return SUCCESS;
@@ -745,8 +739,8 @@ dynamorio_app_init(void)
 void
 dynamorio_fork_init(dcontext_t *dcontext)
 {
-#ifdef CROWD_SAFE
-    init_link_observer(dcontext, true);
+#ifdef SECURITY_AUDIT
+    audit_init(dcontext, true/*is fork*/);
 #endif
     /* on a fork we want to re-initialize some data structures, especially
      * log files, which we want a separate directory for
@@ -857,7 +851,7 @@ dynamorio_fork_init(dcontext_t *dcontext)
 /* To make DynamoRIO useful as a library for a standalone client
  * application (as opposed to a client library that works with
  * DynamoRIO in executing a target application).  This makes DynamoRIO
- * useful as an IA-32 disassembly library, etc.  
+ * useful as an IA-32 disassembly library, etc.
  */
 dcontext_t *
 standalone_init(void)
@@ -903,7 +897,7 @@ standalone_init(void)
         main_logfile = open_log_file(main_logfile_name(), NULL, 0);
         print_file(main_logfile, "%s\n", dynamorio_version_string);
         print_file(main_logfile, "Log file for standalone unit test\n");
-        get_dynamo_options_string(&dynamo_options, 
+        get_dynamo_options_string(&dynamo_options,
                                   initial_options, sizeof(initial_options), true);
         SYSLOG_INTERNAL_INFO("Initial options = %s", initial_options);
         print_file(main_logfile, "\n");
@@ -949,7 +943,7 @@ dynamo_process_exit_with_thread_info(void)
 /* shared between app_exit and detach */
 int
 dynamo_shared_exit(IF_WINDOWS_(thread_record_t *toexit)
-                   IF_WINDOWS_ELSE_NP(bool detach_stacked_callbacks, void)) 
+                   IF_WINDOWS_ELSE_NP(bool detach_stacked_callbacks, void))
 {
     DEBUG_DECLARE(uint endtime);
     /* set this now, could already be set */
@@ -960,7 +954,7 @@ dynamo_shared_exit(IF_WINDOWS_(thread_record_t *toexit)
     LOG(GLOBAL, LOG_STATS, 1, "\n#### Statistics for entire process:\n");
     LOG(GLOBAL, LOG_STATS, 1, "Total running time: %d seconds\n",
         endtime - starttime);
-    
+
 #ifdef PAPI
     hardware_perfctr_exit();
 #endif
@@ -972,7 +966,7 @@ dynamo_shared_exit(IF_WINDOWS_(thread_record_t *toexit)
         dump_global_stats(false);
     });
 #endif
-    
+
     if (SELF_PROTECT_ON_CXT_SWITCH) {
         DELETE_LOCK(protect_info->lock);
         global_unprotected_heap_free(protect_info, sizeof(protect_info_t) HEAPACCT(ACCT_OTHER));
@@ -1036,7 +1030,7 @@ dynamo_shared_exit(IF_WINDOWS_(thread_record_t *toexit)
                      HEAPACCT(ACCT_THREAD_MGT));
     all_threads = NULL;
     mutex_unlock(&all_threads_lock);
-   
+
 #ifdef WINDOWS
 # ifdef CLIENT_INTERFACE
     /* for -private_loader we do this here to catch more exit-time crashes */
@@ -1157,7 +1151,7 @@ synch_with_threads_at_exit(thread_synch_state_t synch_res)
 
     /* xref case 8747, requesting suspended is preferable to terminated and it
      * doesn't make a difference here which we use (since the process is about
-     * to die).  
+     * to die).
      * On Linux, however, we do not have dependencies on OS thread
      * properties like we do on Windows (TEB, etc.), and our suspended
      * threads use their sigstacks and ostd data structs, making cleanup
@@ -1171,7 +1165,7 @@ synch_with_threads_at_exit(thread_synch_state_t synch_res)
     IF_UNIX(dynamo_exiting = true;) /* include execve-exited vfork threads */
     DEBUG_DECLARE(ok =)
         synch_with_all_threads(synch_res,
-                               &threads, &num_threads, 
+                               &threads, &num_threads,
                                /* Case 6821: other synch-all-thread uses that
                                 * only care about threads carrying fcache
                                 * state can ignore us
@@ -1182,16 +1176,16 @@ synch_with_threads_at_exit(thread_synch_state_t synch_res)
                                THREAD_SYNCH_SUSPEND_FAILURE_IGNORE);
     ASSERT(ok);
     ASSERT(threads == NULL && num_threads == 0); /* We asked for CLEANED */
-    /* the synch_with_all_threads function grabbed the 
+    /* the synch_with_all_threads function grabbed the
      * thread_initexit_lock for us! */
-    /* do this now after all threads we know about are killed and 
-     * while we hold the thread_initexit_lock so any new threads that 
+    /* do this now after all threads we know about are killed and
+     * while we hold the thread_initexit_lock so any new threads that
      * are waiting on it won't get in our way (see thread_init()) */
     dynamo_exited = true;
     end_synch_with_all_threads(threads, num_threads, false/*don't resume*/);
 
-#ifdef CROWD_SAFE
-    destroy_link_observer();
+#ifdef SECURITY_AUDIT
+    audit_exit();
 #endif
 }
 
@@ -1224,7 +1218,7 @@ dynamo_process_exit_cleanup(void)
 
         /* perform exit tasks that require full thread data structs */
         dynamo_process_exit_with_thread_info();
-    
+
         if (INTERNAL_OPTION(single_privileged_thread)) {
             mutex_unlock(&thread_initexit_lock);
         }
@@ -1232,20 +1226,20 @@ dynamo_process_exit_cleanup(void)
         /* if ExitProcess called before all threads terminated, they won't
          * all have gone through dynamo_thread_exit, so clean them up now
          * so we can get stats about them
-         * 
+         *
          * we don't check control_all_threads b/c we're just killing
          * the threads we know about here
          */
         synch_with_threads_at_exit(IF_WINDOWS_ELSE
                                    (THREAD_SYNCH_SUSPENDED_AND_CLEANED,
                                     THREAD_SYNCH_TERMINATED_AND_CLEANED));
-        /* now that APC interception point is unpatched and 
+        /* now that APC interception point is unpatched and
          * dynamorio_exited is set and we've killed all the theads we know
-         * about, assumption is that no other threads will be running in 
+         * about, assumption is that no other threads will be running in
          * dynamorio code from here on out (esp. when we get into shared exit)
          * that will do anything that could be dangerous (could possibly be
-         * a thread in the APC interception code prior to reaching thread_init 
-         * but it will only global log and do thread_lookup which should be 
+         * a thread in the APC interception code prior to reaching thread_init
+         * but it will only global log and do thread_lookup which should be
          * safe throughout) */
 
         CS_LOG("Exit pre-client\n");
@@ -1317,7 +1311,7 @@ dynamo_process_exit(void)
 
     SELF_UNPROTECT_DATASEC(DATASEC_RARELY_PROT);
     synchronize_dynamic_options();
-    SYSLOG(SYSLOG_INFORMATION, INFO_PROCESS_STOP, 
+    SYSLOG(SYSLOG_INFORMATION, INFO_PROCESS_STOP,
            2, get_application_name(), get_application_pid());
 #ifdef DEBUG
     if (!dynamo_exited) {
@@ -1339,17 +1333,17 @@ dynamo_process_exit(void)
         }
     }
 
-# ifdef CROWD_SAFE
+# ifdef SECURITY_AUDIT
     if (dynamo_exited)
-        close_crowd_safe_log();
+        audit_close_logfile();
 # endif
 
     return SUCCESS;
 
 #else /* DEBUG */
     if (dynamo_exited) {
-# ifdef CROWD_SAFE
-        close_crowd_safe_log();
+# ifdef SECURITY_AUDIT
+        audit_close_logfile();
 # endif
         return SUCCESS;
     }
@@ -1358,7 +1352,7 @@ dynamo_process_exit(void)
      * we didn't create any IPC objects or anything that might be persistent
      * beyond our death, we're not holding any systemwide locks, etc.
      */
- 
+
     /* It is not clear whether the Event Log service can handle well unterminated connections */
 
     /* Do we need profile data for each thread?
@@ -1383,9 +1377,9 @@ dynamo_process_exit(void)
 
     if (DYNAMO_OPTION(synch_at_exit)
         /* by default we synch if any exit event exists */
-        IF_CLIENT_INTERFACE(|| (!DYNAMO_OPTION(multi_thread_exit) && 
+        IF_CLIENT_INTERFACE(|| (!DYNAMO_OPTION(multi_thread_exit) &&
                                 dr_exit_hook_exists())
-                            || (!DYNAMO_OPTION(skip_thread_exit_at_exit) && 
+                            || (!DYNAMO_OPTION(skip_thread_exit_at_exit) &&
                                 dr_thread_exit_hook_exists()))) {
         /* needed primarily for CLIENT_INTERFACE but technically all configurations
          * can have racy crashes at exit time (xref PR 470957)
@@ -1412,7 +1406,7 @@ dynamo_process_exit(void)
                 /* We always want to call this for CI builds so we can get the
                  * dr_fragment_deleted() callbacks.
                  */
-#ifdef CROWD_SAFE_INTEGRATION
+#ifdef SECURITY_AUDIT
                 link_observer_thread_exit(threads[i]->dcontext);
 #endif
                 fragment_thread_exit(threads[i]->dcontext);
@@ -1430,7 +1424,7 @@ dynamo_process_exit(void)
                 instrument_thread_exit_event(threads[i]->dcontext);
 # endif
         }
-        global_heap_free(threads, num*sizeof(thread_record_t*) 
+        global_heap_free(threads, num*sizeof(thread_record_t*)
                          HEAPACCT(ACCT_THREAD_MGT));
         mutex_unlock(&thread_initexit_lock);
     }
@@ -1469,7 +1463,7 @@ dynamo_process_exit(void)
 # endif
     }
 #endif
- 
+
 #ifdef CALL_PROFILE
     profile_callers_exit();
 #endif
@@ -1480,9 +1474,9 @@ dynamo_process_exit(void)
     /* so make sure eventlog connection is terminated (if present)  */
     os_fast_exit();
 
-#ifdef CROWD_SAFE
+#ifdef SECURITY_AUDIT
     if (dynamo_exited)
-        close_crowd_safe_log();
+        audit_close_logfile();
 #endif
     return SUCCESS;
 #endif /* !DEBUG */
@@ -1493,7 +1487,7 @@ create_new_dynamo_context(bool initial, byte *dstack_in)
 {
     dcontext_t *dcontext;
     size_t alloc = sizeof(dcontext_t) + proc_get_cache_line_size();
-    void *alloc_start = (void *) 
+    void *alloc_start = (void *)
         ((TEST(SELFPROT_GLOBAL, dynamo_options.protect_mask) &&
           !TEST(SELFPROT_DCONTEXT, dynamo_options.protect_mask)) ?
          /* if protecting global but not dcontext, put whole thing in unprot mem */
@@ -1507,7 +1501,7 @@ create_new_dynamo_context(bool initial, byte *dstack_in)
     ASSERT(sizeof(priv_mcontext_t) == IF_X64_ELSE(18,10)*sizeof(reg_t) +
            PRE_XMM_PADDING + XMM_SLOTS_SIZE);
 
-    /* Put here all one-time dcontext field initialization 
+    /* Put here all one-time dcontext field initialization
      * Make sure to update create_callback_dcontext to shared
      * fields across callback dcontexts for the same thread.
      */
@@ -1744,7 +1738,7 @@ create_callback_dcontext(dcontext_t *old_dcontext)
 #ifdef KSTATS
     new_dcontext->thread_kstats = old_dcontext->thread_kstats;
 #endif
-    /* at_syscall is real time based, not app context based, so shared 
+    /* at_syscall is real time based, not app context based, so shared
      *
      * FIXME: Yes need to share when swapping at NtCallbackReturn, but
      * want to keep old so when return from cb will do post-syscall for
@@ -1756,8 +1750,8 @@ create_callback_dcontext(dcontext_t *old_dcontext)
     new_dcontext->upcontext_ptr->at_syscall = old_dcontext->upcontext_ptr->at_syscall;
 #ifdef HOT_PATCHING_INTERFACE   /* Fix for case 5367. */
     /* hotp_excpt_state should be unused at this point.  If it is used, it can
-     * be only because a hot patch made a system call with a callback.  This is 
-     * a bug because hot patches can't do system calls, let alone one with 
+     * be only because a hot patch made a system call with a callback.  This is
+     * a bug because hot patches can't do system calls, let alone one with
      * callbacks.
      */
     DOCHECK(1, {
@@ -1915,7 +1909,7 @@ get_list_of_threads_ex(thread_record_t ***list, int *num, bool include_execve)
 /* assumes caller can ensure that thread is either suspended or self to
  * avoid races
  */
-thread_record_t * 
+thread_record_t *
 thread_lookup(thread_id_t tid)
 {
     thread_record_t *tr;
@@ -1928,9 +1922,9 @@ thread_lookup(thread_id_t tid)
 
     hindex = HASH_FUNC_BITS(tid, ALL_THREADS_HASH_BITS);
     mutex_lock(&all_threads_lock);
-    if (all_threads == NULL) { 
+    if (all_threads == NULL) {
         tr = NULL;
-    } else { 
+    } else {
         tr = all_threads[hindex];
     }
     while (tr != NULL) {
@@ -1980,14 +1974,14 @@ add_thread(IF_WINDOWS_ELSE_NP(HANDLE hthread, process_id_t pid),
     LOG(GLOBAL, LOG_THREADS, 1, "Thread %d app handle rights: "PFX"\n",
         tid, nt_get_handle_access_rights(hthread));
     duplicate_handle(NT_CURRENT_PROCESS, hthread, NT_CURRENT_PROCESS,
-                     &tr->handle, 0, 0, 
+                     &tr->handle, 0, 0,
                      DUPLICATE_SAME_ACCESS|DUPLICATE_SAME_ATTRIBUTES);
     /* We prob. only need TERMINATE (for kill thread), SUSPEND/RESUME/GET_CONTEXT
-     * (for synchronizing), and SET_CONTEXT (+ synchronizing requirements, for 
+     * (for synchronizing), and SET_CONTEXT (+ synchronizing requirements, for
      * detach).  All access includes this and quite a bit more. */
 # if 0
     /* eventually should be a real assert, but until we have a story for the
-     * injected detach threads, have to ifdef out even the ASSERT_CURIOSITY 
+     * injected detach threads, have to ifdef out even the ASSERT_CURIOSITY
      * (even a syslog internal warning is prob. to noisy for QA) */
     ASSERT_CURIOSITY(TESTALL(THREAD_ALL_ACCESS, nt_get_handle_access_rights(tr->handle)));
 # endif
@@ -2056,8 +2050,8 @@ remove_thread(IF_WINDOWS_(HANDLE hthread) thread_id_t tid)
 /* this bool is protected by reset_pending_lock */
 DECLARE_FREQPROT_VAR(static bool reset_at_nth_thread_triggered, false);
 
-/* thread-specific initialization 
- * if dstack_in is NULL, then a dstack is allocated; else dstack_in is used 
+/* thread-specific initialization
+ * if dstack_in is NULL, then a dstack is allocated; else dstack_in is used
  * as the thread's dstack
  * mc can be NULL for the initial thread
  * returns -1 if current thread has already been initialized
@@ -2097,20 +2091,20 @@ dynamo_thread_init(byte *dstack_in, priv_mcontext_t *mc
     mutex_lock(&thread_initexit_lock);
 
     /* The assumption is that if dynamo_exited, then we are about to exit and
-     * clean up, initializing this thread then would be dangerous, better to 
-     * wait here for the app to die.  Is safe with detach, since a thread 
+     * clean up, initializing this thread then would be dangerous, better to
+     * wait here for the app to die.  Is safe with detach, since a thread
      * should never reach here when dynamo_exited is true during detach */
     /* under current implementation of process exit, can happen only under
      * debug build, or app_start app_exit interface */
     while (dynamo_exited) {
         /* logging should be safe, though might not actually result in log
          * message */
-        DODEBUG_ONCE(LOG(GLOBAL, LOG_THREADS, 1, 
+        DODEBUG_ONCE(LOG(GLOBAL, LOG_THREADS, 1,
                          "Thread %d reached initialization point while dynamo exiting, "
-                         "waiting for app to exit\n", get_thread_id());); 
+                         "waiting for app to exit\n", get_thread_id()););
         mutex_unlock(&thread_initexit_lock);
         os_thread_yield();
-        /* just in case we want to support exited and then restarted at some 
+        /* just in case we want to support exited and then restarted at some
          * point */
         mutex_lock(&thread_initexit_lock);
     }
@@ -2140,7 +2134,7 @@ dynamo_thread_init(byte *dstack_in, priv_mcontext_t *mc
         *get_mcontext(dcontext) = *mc;
 
     /* For hotp_only, the thread should run native, not under dr.  However,
-     * the core should still get control of the thread at hook points to track 
+     * the core should still get control of the thread at hook points to track
      * what the application is doing & at patched points to execute hot patches.
      * It is the same for thin_client except that there are fewer hooks, only to
      * follow children.
@@ -2155,7 +2149,7 @@ dynamo_thread_init(byte *dstack_in, priv_mcontext_t *mc
      * is held.  CHECK: is this always correct?  thread_lookup does have an assert
      * to try and enforce but cannot tell who has the lock.
      */
-    add_thread(IF_WINDOWS_ELSE(NT_CURRENT_THREAD, get_process_id()), get_thread_id(), 
+    add_thread(IF_WINDOWS_ELSE(NT_CURRENT_THREAD, get_process_id()), get_thread_id(),
                under_dynamo_control, dcontext);
 #if defined(WINDOWS) && defined(DR_APP_EXPORTS)
     /* Now that the thread is in the main thread table we don't need to remember it */
@@ -2210,8 +2204,8 @@ dynamo_thread_init(byte *dstack_in, priv_mcontext_t *mc
     fcache_thread_init(dcontext);
     link_thread_init(dcontext);
     fragment_thread_init(dcontext);
-#ifdef CROWD_SAFE_INTEGRATION
-    link_observer_thread_init(dcontext);
+#ifdef SECURITY_AUDIT
+    audit_thread_init(dcontext);
 #endif
 
     /* This lock has served its purposes: A) a barrier to thread creation for those
@@ -2224,7 +2218,7 @@ dynamo_thread_init(byte *dstack_in, priv_mcontext_t *mc
 
 #ifdef CLIENT_INTERFACE
     /* Set up client data needed in loader_thread_init for IS_CLIENT_THREAD */
-# ifndef CROWD_SAFE_INTEGRATION
+# ifndef SECURITY_AUDIT
     instrument_client_thread_init(dcontext, client_thread);
 # endif
 #endif
@@ -2293,8 +2287,8 @@ dynamo_thread_exit_pre_client(dcontext_t *dcontext, thread_id_t id)
      * monitor_thread_exit remains later b/c of monitor_remove_fragment calls
      */
     trace_abort_and_delete(dcontext);
-#ifdef CROWD_SAFE_INTEGRATION
-    link_observer_thread_exit(dcontext);
+#ifdef SECURITY_AUDIT
+    audit_thread_exit(dcontext);
 #endif
     fragment_thread_exit(dcontext);
 #ifdef CLIENT_INTERFACE
@@ -2327,7 +2321,7 @@ dynamo_thread_exit_common(dcontext_t *dcontext, thread_id_t id,
 
     /* synch point so thread exiting can be prevented for critical periods */
     /* see comment at start of method for other thread exit */
-    if (!other_thread) 
+    if (!other_thread)
         mutex_lock(&thread_initexit_lock);
 
     ASSERT_OWN_MUTEX(true, &thread_initexit_lock);
@@ -2384,10 +2378,10 @@ dynamo_thread_exit_common(dcontext_t *dcontext, thread_id_t id,
         for (i=0; i<10; i++) {
             if (dcontext->cache_time[i] > (uint64) 0) {
                 uint top_part, bottom_part;
-                divide_int64_print(dcontext->cache_time[i], kilo_hertz, false, 
+                divide_int64_print(dcontext->cache_time[i], kilo_hertz, false,
                                    3, &top_part, &bottom_part);
-                LOG(THREAD, LOG_STATS|LOG_THREADS, 1, 
-                    "\t#%2d = %6u.%.3u ms, %9d hits\n", 
+                LOG(THREAD, LOG_STATS|LOG_THREADS, 1,
+                    "\t#%2d = %6u.%.3u ms, %9d hits\n",
                     i+1, top_part, bottom_part, (int)dcontext->cache_count[i]);
             }
         }
@@ -2521,7 +2515,7 @@ dynamo_thread_exit_common(dcontext_t *dcontext, thread_id_t id,
              * probably via dynamo_thread_stack_free_and_exit(), as the stack free
              * must be done before the exit
              */
-        } 
+        }
     }
 
     return SUCCESS;
@@ -2706,7 +2700,7 @@ dynamorio_take_over_threads(dcontext_t *dcontext)
     } while (found_threads && attempts < MAX_TAKE_OVER_ATTEMPTS);
 
     if (found_threads) {
-        SYSLOG(SYSLOG_WARNING, INTERNAL_SYSLOG_WARNING, 
+        SYSLOG(SYSLOG_WARNING, INTERNAL_SYSLOG_WARNING,
                3, get_application_name(), get_application_pid(),
                "Failed to take over all threads after multiple attempts");
         ASSERT_NOT_REACHED();
@@ -2747,10 +2741,10 @@ dynamorio_app_take_over_helper(priv_mcontext_t *mc)
          */
         mc->xsp += DYNAMO_START_XSP_ADJUST;
 
-        /* For hotp_only and thin_client, the app should run native, except 
-         * for our hooks. 
+        /* For hotp_only and thin_client, the app should run native, except
+         * for our hooks.
          * This is where apps hooked using appinit key are let go native.
-         * Even though control is going to native app code, we want 
+         * Even though control is going to native app code, we want
          * automatic_startup and control_all_threads set.
          */
         if (!RUNNING_WITHOUT_CODE_CACHE())
@@ -2761,7 +2755,7 @@ dynamorio_app_take_over_helper(priv_mcontext_t *mc)
 }
 
 #ifdef WINDOWS
-extern app_pc parent_early_inject_address; /* from os.c */ 
+extern app_pc parent_early_inject_address; /* from os.c */
 
 /* in arch-specific assembly file */
 void dynamorio_app_take_over(void);
@@ -2900,7 +2894,7 @@ dynamorio_protect(void)
             ASSERT(num == protect_info->num_threads_suspended);
             protect_info->num_threads_suspended = 0;
         }
-        
+
         /* thread init/exit can proceed now */
         mutex_unlock(&thread_initexit_lock);
     }
@@ -2915,7 +2909,7 @@ dynamorio_protect(void)
     mutex_unlock(&protect_info->lock);
 }
 
-static void 
+static void
 dynamorio_unprotect(void)
 {
     ASSERT(SELF_PROTECT_ON_CXT_SWITCH);
@@ -2937,7 +2931,7 @@ dynamorio_unprotect(void)
              * and can't do that without setting a lock => need data segment!
              */
             mutex_lock(&thread_initexit_lock);
-        
+
             if (get_num_threads() > 1) {
                 thread_record_t *tr;
                 int i;
@@ -3168,7 +3162,7 @@ protect_data_section(uint sec, bool writable)
     }
     mutex_lock(&datasec_lock[sec]);
     ASSERT(datasec_start[sec] != NULL);
-    /* if using libc, we cannot print while data segment is read-only! 
+    /* if using libc, we cannot print while data segment is read-only!
      * thus, if making it writable, do that first, otherwise do it last.
      * w/ ntdll this is not a problem.
      */
@@ -3224,7 +3218,7 @@ entering_dynamorio(void)
     }
 }
 
-void 
+void
 exiting_dynamorio(void)
 {
     ASSERT(HOOK_ENABLED);
@@ -3251,7 +3245,7 @@ is_on_initstack(byte *esp)
 bool
 is_on_dstack(dcontext_t *dcontext, byte *esp)
 {
-    return (esp <= dcontext->dstack && 
+    return (esp <= dcontext->dstack &&
             esp > dcontext->dstack - DYNAMORIO_STACK_SIZE);
 }
 
