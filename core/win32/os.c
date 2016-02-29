@@ -62,10 +62,8 @@
 #include "../perscache.h"
 #include "../native_exec.h"
 
-#ifdef SECURITY_AUDIT
-# include "instrument.h"
-# include "audit.h"
-#endif
+#include "instrument.h"
+#include "audit.h"
 
 #ifdef NOT_DYNAMORIO_CORE_PROPER
 # undef ASSERT

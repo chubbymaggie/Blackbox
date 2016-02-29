@@ -190,12 +190,13 @@ if ($header) {
      "$core/x86/decode.h",       # OPSZ_ consts, decode routines
      "$core/x86/decode_fast.h",  # decode routines
      "$core/x86/disassemble.h",  # disassemble routines
-     "$core/x86/audit.h",        # security audit callbacks
-     "$core/fragment.h",         # binary tracedump format
+     "$core/link.h",             # linkstub_t
+     "$core/fragment.h",         # fragment_t, binary tracedump format
      "$core/win32/os_private.h", # rsrc section walking
      "$core/hotpatch.c",         # probe api
      "$core/lib/dr_config.h",
      "$core/lib/dr_inject.h",
+     "$core/x86/audit.h",        # security audit callbacks
      );
 
 # PR 214947: VMware retroactively holds the copyright.

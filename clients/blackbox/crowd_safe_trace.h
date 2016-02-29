@@ -105,9 +105,6 @@ void
 notify_incoming_link(dcontext_t *dcontext, app_pc from, app_pc to);
 
 void
-notify_all_threads_synched(thread_synch_state_t desired_synch_state, thread_synch_permission_t cur_state);
-
-void
 notify_basic_block_linking_complete(dcontext_t *dcontext, fragment_t *f);
 
 void

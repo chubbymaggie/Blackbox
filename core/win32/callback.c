@@ -65,9 +65,7 @@
 # include "../rct.h" /* for rct_ind_branch_target_lookup */
 #endif
 #include "instrument.h"
-#ifdef SECURITY_AUDIT
-# include "audit.h"
-#endif
+#include "audit.h"
 #include "../perscache.h"
 
 #include <string.h> /* for memcpy */

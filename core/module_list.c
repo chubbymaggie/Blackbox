@@ -34,9 +34,7 @@
 #include "globals.h"
 #include "instrument.h"
 #include "native_exec.h"
-#ifdef SECURITY_AUDIT
-# include "audit.h"
-#endif
+#include "audit.h"
 #include <string.h> /* for memset */
 #ifdef WINDOWS
 # include "ntdll.h" /* for protect_virtual_memory */

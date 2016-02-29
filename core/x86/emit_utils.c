@@ -58,9 +58,7 @@
 #ifdef DEBUG
 # include "disassemble.h"
 #endif
-#ifdef SECURITY_AUDIT
-# include "audit.h"
-#endif
+#include "audit.h"
 #include <limits.h> /* for UCHAR_MAX */
 #include "../perscache.h"
 

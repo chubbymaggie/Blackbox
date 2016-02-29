@@ -703,11 +703,6 @@ notify_incoming_link(dcontext_t *dcontext, app_pc from, app_pc to) {
 }
 
 void
-notify_all_threads_synched(thread_synch_state_t desired_synch_state, thread_synch_permission_t cur_state) {
-    CS_LOG("  === Synch: all threads transitioned from state %d to state %d\n", cur_state, desired_synch_state);
-}
-
-void
 notify_basic_block_linking_complete(dcontext_t *dcontext, fragment_t *f) {
     if (CROWD_SAFE_BB_GRAPH()) {
         crowd_safe_thread_local_t *cstl = GET_CSTL(dcontext);

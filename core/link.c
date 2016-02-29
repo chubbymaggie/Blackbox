@@ -48,9 +48,7 @@
 #include <string.h> /* for memset */
 #include "perscache.h"
 #include "instr.h" /* PC_RELATIVE_TARGET */
-#ifdef SECURITY_AUDIT
-# include "audit.h"
-#endif
+#include "audit.h"
 
 /* fragment_t and future_fragment_t are guaranteed to have flags field at same offset,
  * so we use it to find incoming_stubs offset

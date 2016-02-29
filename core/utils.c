@@ -43,9 +43,7 @@
 #include "configure_defines.h"
 #include "utils.h"
 #include "module_shared.h"
-#ifdef SECURITY_AUDIT
-# include "audit.h"
-#endif
+#include "audit.h"
 #include <string.h>  /* for memset */
 #include <math.h>
 

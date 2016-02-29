@@ -6,18 +6,18 @@
 /*
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
- * 
+ *
  * * Redistributions of source code must retain the above copyright notice,
  *   this list of conditions and the following disclaimer.
- * 
+ *
  * * Redistributions in binary form must reproduce the above copyright notice,
  *   this list of conditions and the following disclaimer in the documentation
  *   and/or other materials provided with the distribution.
- * 
+ *
  * * Neither the name of VMware, Inc. nor the names of its contributors may be
  *   used to endorse or promote products derived from this software without
  *   specific prior written permission.
- * 
+ *
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
  * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
  * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
@@ -35,14 +35,17 @@
 /* Copyright (c) 2001-2003 Massachusetts Institute of Technology */
 /* Copyright (c) 2000-2001 Hewlett-Packard Company */
 
-/* 
- * fragment.h - fragment_t structures 
+/*
+ * fragment.h - fragment_t structures
  */
 
 #ifndef _FRAGMENT_H_
 #define _FRAGMENT_H_ 1
 
 #include "hashtable.h"
+
+/* DR_API EXPORT TOFILE dr_audit.h */
+/* DR_API EXPORT BEGIN */
 
 /* Flags, stored in fragment_t->flags bitfield
  */
@@ -79,8 +82,8 @@
 /* this flags indicates that a trace is being built from fragment_t->tag */
 #define FRAG_TRACE_BUILDING         0x002000
 
-/* used on future fragments, currently only read for adaptive working set 
- * also used for fragments to know whether they are on the deleted list 
+/* used on future fragments, currently only read for adaptive working set
+ * also used for fragments to know whether they are on the deleted list
  * (shared) or flush queue (private)
  */
 #define FRAG_WAS_DELETED            0x004000
@@ -93,6 +96,8 @@
 /* used by vmarea to distinguish fragment_t from its own multi unit struct */
 #define FRAG_IS_EXTRA_VMAREA        0x040000
 #define FRAG_IS_EXTRA_VMAREA_INIT   0x080000
+
+/* DR_API EXPORT END */
 
 #ifdef PROGRAM_SHEPHERDING
 /* indicates from memory that wasn't part of code from image on disk */
@@ -109,6 +114,9 @@
  */
 # define FRAG_HAS_MOV_SEG           0x200000
 #endif
+
+/* DR_API EXPORT TOFILE dr_audit.h */
+/* DR_API EXPORT BEGIN */
 
 #ifdef X64
 /* this fragment contains 32-bit code */
@@ -152,6 +160,8 @@
 /* This fragment immediately follows a free entry in the fcache */
 #define FRAG_FOLLOWS_FREE_ENTRY   0x80000000
 
+/* DR_API EXPORT END */
+
 /* Flags that a future fragment can transfer to a real on taking its place:
  * Naturally we don't want FRAG_IS_FUTURE or FRAG_WAS_DELETED.
  * FRAG_SHARED has to already be on the real fragment.
@@ -169,7 +179,14 @@
 /* to save space size field is a ushort => maximum fragment size */
 enum { MAX_FRAGMENT_SIZE = USHRT_MAX };
 
-/* fragment structure used for basic blocks and traces 
+/* DR_API EXPORT TOFILE dr_audit.h */
+/* DR_API EXPORT BEGIN */
+
+#ifdef API_EXPORT_ONLY
+typedef void * translation_info_t;
+#endif
+
+/* fragment structure used for basic blocks and traces
  * this is the core structure shared by everything
  * trace heads and traces extend it below
  */
@@ -193,7 +210,7 @@ struct _fragment_t {
 
     /* size in bytes of the fragment (includes body and stubs, and for
      * selfmod fragments also includes selfmod app code copy and size field)
-     */    
+     */
     ushort       size;
 
     /* both of these fields are tiny -- padding shouldn't be more than a cache line
@@ -239,6 +256,7 @@ struct _fragment_t {
 #endif
 }; /* fragment_t */
 
+/* DR_API EXPORT END */
 
 /* Shared fragments don't need some fields that private ones do, so we
  * dynamically choose different structs.  fragment_t is for shared only.
@@ -386,7 +404,7 @@ typedef struct _fragment_entry_t {
 /* is this table allocated in persistent memory? */
 #define FRAG_TABLE_PERSISTENT            HASHTABLE_PERSISTENT
 /* Indicates that the table targets traces */
-#define FRAG_TABLE_TRACE                 HASHTABLE_CUSTOM_FLAGS_START 
+#define FRAG_TABLE_TRACE                 HASHTABLE_CUSTOM_FLAGS_START
 
 /* hashtable of fragment_t* entries */
 /* macros w/ name and types are duplicated in fragment.c -- keep in sync */
@@ -448,7 +466,7 @@ typedef struct _fragment_entry_t {
  * FIXME: Shared bb IBL routines indirectly access only a few fields
  * from each fragment_table_t which will touch a separate cache line for
  * each.  However, trace IBL routines don't indirect so I don't expect
- * a performance hit of using the current struct layout.  
+ * a performance hit of using the current struct layout.
  * FIXME: The bb IBL routines however are shared and therefore
  * indirect, so splitting the fragment_table_t in two compactable
  * structures may be worth trying.
@@ -713,7 +731,7 @@ fragment_add_after_call(dcontext_t *dcontext, app_pc tag);
 void
 fragment_flush_after_call(dcontext_t *dcontext, app_pc tag);
 uint
-invalidate_after_call_target_range(dcontext_t *dcontext, 
+invalidate_after_call_target_range(dcontext_t *dcontext,
                                    app_pc text_start, app_pc text_end);
 #endif /* RETURN_AFTER_CALL */
 
@@ -987,7 +1005,7 @@ get_at_syscall(dcontext_t *dcontext);
  * should be used (they MUST be used together). If no executable area removal
  * is needed use flush_fragments_from_region().
  *
- * Alternatively, the trio (also not usable individually) 
+ * Alternatively, the trio (also not usable individually)
  *   1) flush_fragments_synch_unlink_priv
  *   2) flush_fragments_unlink_shared
  *   3) flush_fragments_end_synch
@@ -1113,7 +1131,7 @@ int
 append_ib_trace_last_ibl_exit_stat(dcontext_t *dcontext, instrlist_t *trace,
                                    app_pc speculate_next_tag);
 
-static INLINE_ONCE 
+static INLINE_ONCE
 hashtable_statistics_t*
 get_ibl_per_type_statistics(dcontext_t *dcontext, ibl_branch_type_t branch_type)
 {
@@ -1199,7 +1217,7 @@ typedef struct _tracedump_stub_data {
               * the file, which indicates the linkcount size. */
     /** Code for exit stubs.  Only present if:
      *   stub_pc < cache_start_pc ||
-     *   stub_pc >= cache_start_pc+code_size). 
+     *   stub_pc >= cache_start_pc+code_size).
      * The actual size of the array varies and is indicated by the stub_size field.
      */
     byte stub_code[1/*variable-sized*/];

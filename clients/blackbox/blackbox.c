@@ -190,12 +190,6 @@ audit_process_fork(dcontext_t *dcontext, const char *name)
 }
 
 static void
-audit_all_threads_synched(thread_synch_state_t desired_synch_state, thread_synch_state_t cur_state)
-{
-    notify_all_threads_synched(desired_synch_state, cur_state);
-}
-
-static void
 audit_dynamo_model_initialized()
 {
     notify_dynamo_initialized();
@@ -387,7 +381,6 @@ static audit_callbacks_t callbacks = {
     audit_thread_init,
     audit_thread_exit,
     audit_process_fork,
-    audit_all_threads_synched,
     audit_process_terminating,
     audit_dispatch,
     audit_fcache_enter,

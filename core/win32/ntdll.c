@@ -76,9 +76,7 @@
 
 #include <wchar.h> /* _snwprintf */
 
-#ifdef SECURITY_AUDIT
-# include "audit.h"
-#endif
+#include "audit.h"
 
 /* WARNING: these routines use the Native API, an undocumented API
  * exported by ntdll.dll.

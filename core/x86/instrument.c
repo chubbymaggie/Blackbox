@@ -50,9 +50,7 @@
 #include "instr_create.h"
 #include "decode.h"
 #include "disassemble.h"
-#ifdef SECURITY_AUDIT
-# include "audit.h"
-#endif
+#include "audit.h"
 #include "../fragment.h"
 #include "../emit.h"
 #include "../link.h"

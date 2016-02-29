@@ -47,9 +47,7 @@
 #include "synch.h"
 #include "perscache.h"
 #include "native_exec.h"
-#ifdef SECURITY_AUDIT
-# include "audit.h"
-#endif
+#include "audit.h"
 #include <string.h> /* for strstr */
 
 #ifdef CLIENT_INTERFACE
@@ -515,7 +513,9 @@ enter_fcache(dcontext_t *dcontext, fcache_enter_func_t entry, cache_pc pc)
     }
 #endif
 
-    instrument_fcache_enter(dcontext);
+#ifdef SECURITY_AUDIT
+    audit_fcache_enter(dcontext);
+#endif
 
     dcontext->whereami = WHERE_FCACHE;
     (*entry)(dcontext);

@@ -44,9 +44,7 @@
 #include "aslr.h"
 #include "instrument.h"
 #include "../synch.h"
-#ifdef SECURITY_AUDIT
-# include "audit.h"
-#endif
+#include "audit.h"
 
 /* this points to one of the os-version-specific system call # arrays below */
 int *syscalls = NULL;
@@ -2389,7 +2387,9 @@ presys_Close(dcontext_t *dcontext, reg_t *param_base)
                 "syscall: NtClose of section handle "PFX"\n", handle);
         }
     }
+#ifdef SECURITY_AUDIT
     audit_socket_handle(dcontext, handle, false/*removed*/);
+#endif
 }
 
 #ifdef DEBUG
@@ -3754,6 +3754,36 @@ postsys_DuplicateObject(dcontext_t *dcontext, reg_t *param_base, bool success)
     }
 }
 
+#ifdef SECURITY_AUDIT
+/* CreateFile */
+static void
+postsys_CreateFile(dcontext_t *dcontext, reg_t *param_base, bool success)
+{
+    if (success) {
+        HANDLE handle = *(HANDLE *) postsys_param(dcontext, param_base, 0);
+        ACCESS_MASK access = (ACCESS_MASK) postsys_param(dcontext, param_base, 1);
+        POBJECT_ATTRIBUTES *attributes = (POBJECT_ATTRIBUTES *) postsys_param(dcontext, param_base, 2);
+        IO_STATUS_BLOCK *status_block = (IO_STATUS_BLOCK *) postsys_param(dcontext, param_base, 3);
+        uint file_attributes = (uint) postsys_param(dcontext, param_base, 5);
+        uint share_access = (uint) postsys_param(dcontext, param_base, 6);
+        uint create_disposition = (uint) postsys_param(dcontext, param_base, 7);
+        uint create_options = (uint) postsys_param(dcontext, param_base, 8);
+        char *ea_buffer = (char *) postsys_param(dcontext, param_base, 9);
+        uint ea_length = (uint) postsys_param(dcontext, param_base, 10);
+        //SEC_LOG(3, "CreateFile: 0x%x, 0x%x, "PX", "PX", 0x%x, 0x%x, 0x%x, 0x%x, "PX", 0x%x\n",
+        //    handle, access, attributes, status_block, file_attributes, share_access,
+        //    create_disposition, create_options, ea_buffer, ea_length);
+
+        if (ea_length > 0) {
+            const char *handle_type = (ea_buffer + 8);
+            if (strcmp(handle_type, "AfdOpenPacketXX") == 0)
+                audit_socket_handle(dcontext, handle, true/*created*/);
+            else
+                SEC_LOG(3, "CreateFile of type '%s'\n", handle_type);
+        }
+    }
+}
+
 /* ZwDeviceIoControlFile */
 static void
 postsys_DeviceIoControlFile(dcontext_t *dcontext, reg_t *param_base,
@@ -3858,35 +3888,7 @@ postsys_RemoveIoCompletion(dcontext_t *dcontext, reg_t *param_base, bool success
                completion_handle, completion_key, completion_value, status_block);
     }
 }
-
-/* CreateFile */
-static void
-postsys_CreateFile(dcontext_t *dcontext, reg_t *param_base, bool success)
-{
-    if (success) {
-        HANDLE handle = *(HANDLE *) postsys_param(dcontext, param_base, 0);
-        ACCESS_MASK access = (ACCESS_MASK) postsys_param(dcontext, param_base, 1);
-        POBJECT_ATTRIBUTES *attributes = (POBJECT_ATTRIBUTES *) postsys_param(dcontext, param_base, 2);
-        IO_STATUS_BLOCK *status_block = (IO_STATUS_BLOCK *) postsys_param(dcontext, param_base, 3);
-        uint file_attributes = (uint) postsys_param(dcontext, param_base, 5);
-        uint share_access = (uint) postsys_param(dcontext, param_base, 6);
-        uint create_disposition = (uint) postsys_param(dcontext, param_base, 7);
-        uint create_options = (uint) postsys_param(dcontext, param_base, 8);
-        char *ea_buffer = (char *) postsys_param(dcontext, param_base, 9);
-        uint ea_length = (uint) postsys_param(dcontext, param_base, 10);
-        //SEC_LOG(3, "CreateFile: 0x%x, 0x%x, "PX", "PX", 0x%x, 0x%x, 0x%x, 0x%x, "PX", 0x%x\n",
-        //    handle, access, attributes, status_block, file_attributes, share_access,
-        //    create_disposition, create_options, ea_buffer, ea_length);
-
-        if (ea_length > 0) {
-            const char *handle_type = (ea_buffer + 8);
-            if (strcmp(handle_type, "AfdOpenPacketXX") == 0)
-                audit_socket_handle(dcontext, handle, true/*created*/);
-            else
-                SEC_LOG(3, "CreateFile of type '%s'\n", handle_type);
-        }
-    }
-}
+#endif
 
 #ifdef CLIENT_INTERFACE
 /* i#537: sysenter returns to KiFastSystemCallRet from kernel, and returns to DR

@@ -49,9 +49,7 @@
 #include "utils.h"
 #include "monitor.h"
 #include "vmareas.h"
-#ifdef SECURITY_AUDIT
-# include "audit.h"
-#endif
+#include "audit.h"
 #ifdef SIDELINE
 # include "sideline.h"
 #endif
@@ -61,9 +59,7 @@
 #ifdef CLIENT_INTERFACE
 # include "instrument.h"
 #endif
-#ifdef SECURITY_AUDIT
-# include "audit.h"
-#endif
+#include "audit.h"
 #include "hotpatch.h"
 #include "moduledb.h"
 #include "module_shared.h"

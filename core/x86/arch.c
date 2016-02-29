@@ -51,9 +51,7 @@
 #include "../fcache.h"
 #include "proc.h"
 #include "instrument.h"
-#ifdef SECURITY_AUDIT
-# include "audit.h"
-#endif
+#include "audit.h"
 
 #include <string.h> /* for memcpy */
 

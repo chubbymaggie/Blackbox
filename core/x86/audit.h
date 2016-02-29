@@ -36,6 +36,8 @@
 #ifdef SECURITY_AUDIT
 
 #include "../globals.h"
+#include "../fragment.h"
+#include "../synch.h"
 #include "instr.h"
 
 #ifdef WINDOWS
@@ -50,6 +52,12 @@ do { \
 
 /* DR_API EXPORT TOFILE dr_audit.h */
 /* DR_API EXPORT BEGIN */
+
+#ifdef API_EXPORT_ONLY
+#include "dr_config.h"
+typedef void dcontext_t;
+typedef void (*func)() fcache_enter_func_t;
+#endif
 
 /****************************************************************************
  * SECURITY AUDITING SUPPORT
@@ -67,8 +75,6 @@ typedef struct _audit_callbacks_t {
     void (*audit_thread_init)(dcontext_t *dcontext);
     void (*audit_thread_exit)(dcontext_t *dcontext);
     void (*audit_process_fork)(dcontext_t *dcontext, const char *name);
-    void (*audit_all_threads_synched)(thread_synch_state_t desired_synch_state,
-                                      thread_synch_state_t cur_state);
     void (*audit_process_terminating)(bool external, bool is_crash, const char *file,
                                       int line, const char *expr);
     void (*audit_dispatch)(dcontext_t *dcontext);
@@ -111,7 +117,7 @@ typedef struct _audit_callbacks_t {
     void (*audit_callback_context_switch)(dcontext_t *dcontext, bool is_return);
     void (*audit_nested_shadow_stack)(dcontext_t *dcontext, bool push);
     void (*audit_nt_continue)();
-    void (*audit_socket_handle)(dcontext_t dcontext, HANDLE handle, bool created);
+    void (*audit_socket_handle)(dcontext_t *dcontext, HANDLE handle, bool created);
     void (*audit_device_io_control)(dcontext_t *dcontext, uint result, HANDLE socket,
                                     HANDLE event, IO_STATUS_BLOCK *status_block,
                                     IoControlCode control_code, byte *input_data,
@@ -125,20 +131,7 @@ typedef struct _audit_callbacks_t {
 
 /* DR_API EXPORT END */
 
-static void
-audit_noop();
-
-static audit_callbacks_t default_audit_callbacks = {
-    audit_noop, audit_noop, audit_noop, audit_noop, audit_noop, audit_noop,
-    audit_noop, audit_noop, audit_noop, audit_noop, audit_noop, audit_noop,
-    audit_noop, audit_noop, audit_noop, audit_noop, audit_noop, audit_noop,
-    audit_noop, audit_noop, audit_noop, audit_noop, audit_noop, audit_noop,
-    audit_noop, audit_noop, audit_noop, audit_noop, audit_noop, audit_noop,
-    audit_noop, audit_noop, audit_noop, audit_noop, audit_noop, audit_noop,
-    audit_noop, audit_noop, audit_noop, audit_noop, audit_noop,
-};
-
-static audit_callbacks_t *audit_callbacks = &default_audit_callbacks;
+extern audit_callbacks_t *audit_callbacks;
 
 DR_API
 void
@@ -146,10 +139,7 @@ dr_enter_fcache(dcontext_t *dcontext, fcache_enter_func_t entry, cache_pc pc);
 
 DR_API
 void
-dr_register_audit_callbacks(audit_callbacks_t *callbacks)
-{
-    audit_callbacks = callbacks;
-}
+dr_register_audit_callbacks(audit_callbacks_t *callbacks);
 
 /****************************************************************************
  * SECURITY AUDITING INTERNAL_CALLBACKS
@@ -209,13 +199,6 @@ inline void
 audit_process_fork(dcontext_t *dcontext, const char *name)
 {
     audit_callbacks->audit_process_fork(dcontext, name);
-}
-
-inline void
-audit_all_threads_synched(thread_synch_state_t desired_synch_state,
-                          thread_synch_state_t cur_state)
-{
-    audit_callbacks->audit_all_threads_synched(desired_synch_state, cur_state);
 }
 
 inline void
@@ -418,7 +401,7 @@ audit_nt_continue()
 /* network */
 
 inline void
-audit_socket_handle(dcontext_t dcontext, HANDLE handle, bool created)
+audit_socket_handle(dcontext_t *dcontext, HANDLE handle, bool created)
 {
     audit_callbacks->audit_socket_handle(dcontext, handle, created);
 }
@@ -448,11 +431,6 @@ audit_wait_for_multiple_objects(dcontext_t *dcontext, uint result, uint handle_c
                                                      handles, wait_all);
 }
 #endif /* WINDOWS */
-
-static void
-audit_noop()
-{
-}
 
 #else /* SECURITY_AUDIT */
 # define SEC_LOG(level, ...)

@@ -6,18 +6,18 @@
 /*
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
- * 
+ *
  * * Redistributions of source code must retain the above copyright notice,
  *   this list of conditions and the following disclaimer.
- * 
+ *
  * * Redistributions in binary form must reproduce the above copyright notice,
  *   this list of conditions and the following disclaimer in the documentation
  *   and/or other materials provided with the distribution.
- * 
+ *
  * * Neither the name of VMware, Inc. nor the names of its contributors may be
  *   used to endorse or promote products derived from this software without
  *   specific prior written permission.
- * 
+ *
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
  * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
  * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
@@ -42,6 +42,8 @@
 #ifndef _CORE_LINK_H_ /* using different define than /usr/include/link.h */
 #define _CORE_LINK_H_ 1
 
+/* DR_API EXPORT TOFILE dr_audit.h */
+/* DR_API EXPORT BEGIN */
 
 /* linkstub_t flags
  * WARNING: flags field is a ushort, so max flag is 0x8000!
@@ -57,7 +59,7 @@ enum {
      *
      *   name          LINK_DIRECT LINK_INDIRECT  struct
      *   ---------------  ---         ---         --------------------------
-     *   (subset of fake)  0           0          linkstub_t          
+     *   (subset of fake)  0           0          linkstub_t
      *   normal direct     1           0          direct_linkstub_t
      *   normal indirect   0           1          indirect_linkstub_t
      *   cbr fallthrough   1           1          cbr_fallthrough_linkstub_t
@@ -126,12 +128,17 @@ enum {
 # define LINK_NI_SYSCALL_ALL LINK_NI_SYSCALL
 #endif
 
+/* DR_API EXPORT END */
+
 /* for easy printing */
 #ifndef LINKCOUNT_64_BITS
 #  define LINKCOUNT_FORMAT_STRING "%lu"
 #else
 #  define LINKCOUNT_FORMAT_STRING UINT64_FORMAT_STRING
 #endif
+
+/* DR_API EXPORT TOFILE dr_audit.h */
+/* DR_API EXPORT BEGIN */
 
 /* linkstub_t heap layout is now quite variable.  linkstubs are laid out
  * after the fragment_t structure, which is itself variable.
@@ -144,13 +151,13 @@ enum {
  *     cbr_fallthrough_linkstub_t
  *     indirect_linkstub_t
  *   post_linkstub_t
- *   
+ *
  * There are three types of specially-supported basic blocks that
  * have no post_linkstub_t:
- *   
+ *
  *   fragment_t
  *   indirect_linkstub_t
- *   
+ *
  *   fragment_t
  *   direct_linkstub_t
  *   direct_linkstub_t
@@ -183,6 +190,11 @@ struct _linkstub_t {
 #endif
 };
 
+#ifdef API_EXPORT_ONLY
+typedef struct _linkstub_t linkstub_t;
+typedef struct _fragment_t fragment_t;
+typedef byte * cache_pc;
+#endif
 
 /* linkage info common to all direct fragment exits */
 typedef struct _common_direct_linkstub_t {
@@ -213,7 +225,7 @@ typedef struct _common_direct_linkstub_t {
 typedef struct _direct_linkstub_t {
     common_direct_linkstub_t cdl;
 
-    /* tag identifying the intended app target of the exit branch 
+    /* tag identifying the intended app target of the exit branch
      * Do not directly access this field -- use EXIT_TARGET_TAG(), which
      * works for all linkstub types.
      */
@@ -225,6 +237,8 @@ typedef struct _direct_linkstub_t {
      */
     cache_pc       stub_pc;
 } direct_linkstub_t;
+
+/* DR_API EXPORT END */
 
 
 /* linkage info for cbr fallthrough exits that satisfy two conditions:

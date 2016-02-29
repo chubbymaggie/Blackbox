@@ -41,9 +41,7 @@
 #include "hotpatch.h" /* hotp_only_in_tramp() */
 #include "fragment.h" /* get_at_syscall() */
 #include "fcache.h" /* in_fcache() */
-#ifdef SECURITY_AUDIT
-# include "audit.h"
-#endif
+#include "audit.h"
 #include <string.h> /* for memcpy */
 
 extern vm_area_vector_t *fcache_unit_areas; /* from fcache.c */
@@ -1417,8 +1415,10 @@ synch_with_all_threads(thread_synch_state_t desired_synch_state,
     dynamo_all_threads_synched = all_synched;
 
 #ifdef SECURITY_AUDIT
-    if (all_synched)
-        audit_all_threads_synched(desired_synch_state, cur_state);
+    if (all_synched) {
+        SEC_LOG(3, "  === Synch: all threads transitioned from state %d to state %d\n",
+                cur_state, desired_synch_state);
+    }
 #endif
 
     /* FIXME case 9392: where on all_synch failure we do not release the locks in the
