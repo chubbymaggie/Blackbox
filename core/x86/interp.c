@@ -74,6 +74,14 @@
 # include "vmkuw.h" /* VMKUW_SYSCALL_GATEWAY */
 #endif
 
+#include "../../ext/link-observer/crowd_safe_util.h"
+#ifdef CROWD_SAFE_INTEGRATION
+# include "../../ext/link-observer/basic_block_observer.h"
+# include "../../ext/link-observer/link_observer.h"
+# include "../../ext/link-observer/indirect_link_observer.h"
+# include "../../ext/link-observer/crowd_safe_gencode.h"
+#endif
+
 enum { DIRECT_XFER_LENGTH = 5 };
 
 /* forward declarations */
@@ -84,7 +92,8 @@ static int fixup_last_cti(dcontext_t *dcontext, instrlist_t *trace,
                           fragment_t *prev_f, linkstub_t *prev_l,
                           bool record_translation, uint *num_exits_deleted/*OUT*/,
                           /* If non-NULL, only looks inside trace between these two */
-                          instr_t *start_instr, instr_t *end_instr);
+                          instr_t *start_instr, instr_t *end_instr, app_pc ibp_from_tag,
+                          bool ibp_is_return);
 bool mangle_trace(dcontext_t *dcontext, instrlist_t *ilist, monitor_data_t *md);
 
 /* we use a branch limit of 1 to make it easier for the trace
@@ -219,6 +228,7 @@ typedef struct {
     int eflags;
     app_pc pretend_pc;          /* selfmod only: decode from separate pc */
     DEBUG_DECLARE(bool initialized;)
+    _CROWD_SAFE_DECLARE(int syscall_number;)
 } build_bb_t;
 
 /* forward decl */
@@ -243,6 +253,9 @@ init_build_bb(build_bb_t *bb, app_pc start_pc, bool app_interp, bool for_cache,
     bb->overlap_info = overlap_info;
     bb->follow_direct = !TEST(FRAG_SELFMOD_SANDBOXED, known_flags);
     bb->flags = known_flags;
+#ifdef CROWD_SAFE_INTEGRATION
+    bb->syscall_number = 0;
+#endif
     DODEBUG(bb->initialized = true;);
 }
 
@@ -901,7 +914,9 @@ bb_process_ubr(dcontext_t *dcontext, build_bb_t *bb)
             ASSERT(instr_get_opcode(bb->instr) == OP_mov_imm ||
                    (instr_get_opcode(bb->instr) == OP_lea &&
                     DYNAMO_OPTION(native_exec_hook_conflict) == 
-                    HOOKED_TRAMPOLINE_HOOK_DEEPER));
+                    HOOKED_TRAMPOLINE_HOOK_DEEPER) ||
+                    DYNAMO_OPTION(native_exec_hook_conflict) ==
+                    HOOKED_TRAMPOLINE_OMIT);
             instrlist_append(bb->ilist, bb->instr);
             /* translation should point to the trampoline at the
              * original application address
@@ -1755,8 +1770,12 @@ bb_process_syscall(dcontext_t *dcontext, build_bb_t *bb)
      * We give up on inlining but we can still use ignorable/shared syscalls
      * and trace continuation.
      */
-    if (bb->pass_to_client && !bb->post_client)
+    if (bb->pass_to_client && !bb->post_client) {
+#ifdef CROWD_SAFE_INTEGRATION
+        bb->syscall_number = -1;
+#endif
         return false;
+    }
 #endif
 #ifdef DGC_DIAGNOSTICS
     if (TEST(FRAG_DYNGEN, bb->flags) && !is_dyngen_vsyscall(bb->instr_start)) {
@@ -1788,6 +1807,10 @@ bb_process_syscall(dcontext_t *dcontext, build_bb_t *bb)
         sysnum = -1;
     }
 #endif
+#ifdef CROWD_SAFE_INTEGRATION
+    bb->syscall_number = sysnum;
+#endif
+
     if (sysnum > -1 &&
         DYNAMO_OPTION(ignore_syscalls) && 
         ignorable_system_call(sysnum)
@@ -2523,6 +2546,7 @@ client_process_bb(dcontext_t *dcontext, build_bb_t *bb)
     bool found_syscall = false;
     bool found_int = false;
     instr_t *last_app_instr = NULL;
+    instr_t *tmp;
 
     /* This routine is called by more than just bb builder, also used
      * for recreating state, so only call if caller requested it
@@ -2650,7 +2674,7 @@ client_process_bb(dcontext_t *dcontext, build_bb_t *bb)
          * so do so now to get bb->flags and bb->exit_type set
          */
         if (instr_is_syscall(inst) || instr_get_opcode(inst) == OP_int) {
-            instr_t *tmp = bb->instr;
+            tmp = bb->instr;
             bb->instr = inst;
             if (instr_is_syscall(bb->instr))
                 bb_process_syscall(dcontext, bb);
@@ -2758,6 +2782,17 @@ client_process_bb(dcontext_t *dcontext, build_bb_t *bb)
             }
         }
     }
+
+#ifdef CROWD_SAFE_INTEGRATION
+    if (bb->for_cache) {
+        if (bb->for_trace) {
+            notify_trace_constructed(dcontext, bb->ilist);
+        } else {
+            notify_basic_block_constructed(dcontext, bb->start_pc, bb->ilist,
+                                           found_syscall, bb->syscall_number);
+        }
+    }
+#endif
 
     /* To handle the client modifying syscall numbers we cannot inline
      * syscalls in the middle of a bb.
@@ -3825,6 +3860,10 @@ build_bb_ilist(dcontext_t *dcontext, build_bb_t *bb)
         instr_exit_branch_set_type(exit_instr, bb->exit_type);
 
         instrlist_append(bb->ilist, exit_instr);
+#ifdef CROWD_SAFE_INTEGRATION
+        insert_indirect_link_branchpoint(dcontext, bb->ilist, bb->start_pc, exit_instr, bb->instr != NULL && 
+                                         instr_is_return(bb->instr), bb->syscall_number);
+#endif
     }
 
     /* set flags */
@@ -4846,6 +4885,7 @@ recreate_fragment_ilist(dcontext_t *dcontext, byte *pc,
         uint i;
         instr_t *last;
         bool mangle_at_end = mangle_trace_at_end();
+        instr_t bb_exit_cti;
 
         if (mangle_at_end) {
             /* we need an md for mangle_trace */
@@ -4862,6 +4902,7 @@ recreate_fragment_ilist(dcontext_t *dcontext, byte *pc,
         }
 
         ilist = instrlist_create(dcontext);
+        instr_init(dcontext, &bb_exit_cti);
         STATS_INC(num_recreated_traces);
         ASSERT(t->bbs != NULL);
         for (i=0; i<t->num_bbs; i++) {
@@ -4926,9 +4967,11 @@ recreate_fragment_ilist(dcontext_t *dcontext, byte *pc,
                     remove_nops_from_ilist(dcontext, bb _IF_DEBUG(true));
                 }
                 if (instrlist_last(ilist) != NULL) {
+                    decode_cti(dcontext, instr_get_app_pc(md.blk_info[i].end_instr), &bb_exit_cti);
                     fixup_last_cti(dcontext, ilist, (app_pc) apc, flags, f->flags, NULL,
                                    NULL, true/* record translation */, NULL,
-                                   NULL, NULL);
+                                   NULL, NULL, md.blk_info[i].info.tag,
+                                   instr_is_return(&bb_exit_cti));
                 }
             }
 
@@ -4936,6 +4979,7 @@ recreate_fragment_ilist(dcontext_t *dcontext, byte *pc,
             instrlist_init(bb); /* to clear fields to make destroy happy */
             instrlist_destroy(dcontext, bb);
         }
+        instr_free(dcontext, &bb_exit_cti);
 
 #ifdef CLIENT_INTERFACE
         /* PR 214962: re-apply client changes, this time storing translation
@@ -5176,7 +5220,7 @@ insert_increment_stat_counter(dcontext_t *dcontext, instrlist_t *trace, instr_t 
  * returns size to be added to trace 
  */
 static inline int
-insert_restore_spilled_xcx(dcontext_t *dcontext, instrlist_t *trace, instr_t *next)
+insert_restore_spilled_xcx(dcontext_t *dcontext, instrlist_t *trace, instr_t *next, bool ibp_is_return, app_pc tag)
 {    
     int added_size = 0;
 
@@ -5186,19 +5230,28 @@ insert_restore_spilled_xcx(dcontext_t *dcontext, instrlist_t *trace, instr_t *ne
                 INSTR_CREATE_mov_ld(dcontext, opnd_create_reg(REG_XCX),
                                     opnd_create_reg(REG_R9)));
         } else {
-            added_size += tracelist_add(dcontext, trace, next,
+            instr_t *restore =
                 INSTR_CREATE_mov_ld(dcontext,
                                     opnd_create_reg(REG_XCX),
                                     opnd_create_tls_slot
-                                    (os_tls_offset(MANGLE_XCX_SPILL_SLOT))));
+                                    (os_tls_offset(MANGLE_XCX_SPILL_SLOT)));
+
+            added_size += tracelist_add(dcontext, trace, next, restore);
+
+#ifdef CROWD_SAFE_INTEGRATION
+            if (ibp_is_return) {
+                added_size += instrument_return_site(dcontext, trace, restore, tag);
+
+                CS_DET("<ret> fixup_last_cti instrumenting inline return in "PX"\n", ibp_from_tag);
+            }
+#endif
         }
     } else {
         /* We need to restore XCX from TLS for shared fragments, but from
          * mcontext for private fragments, and all traces are private
          */
         added_size += tracelist_add(dcontext, trace, next,
-                                    instr_create_restore_from_dcontext
-                                    (dcontext, REG_XCX, XCX_OFFSET));
+                                    instr_create_restore_from_dcontext(dcontext, REG_XCX, XCX_OFFSET));
     }
 
     return added_size;
@@ -5212,7 +5265,7 @@ insert_restore_spilled_xcx(dcontext_t *dcontext, instrlist_t *trace, instr_t *ne
 static int
 insert_transparent_comparison(dcontext_t *dcontext, instrlist_t *trace,
                               instr_t *targeter, /* exit CTI */
-                              app_pc speculative_tag)
+                              app_pc speculative_tag, app_pc ibp_from_tag, bool ibp_is_return)
 {
     int added_size = 0;
     instr_t *jecxz;
@@ -5249,6 +5302,12 @@ insert_transparent_comparison(dcontext_t *dcontext, instrlist_t *trace,
           opnd_create_base_disp(REG_ECX, REG_NULL, 0,
                                 ((int)(ptr_int_t)speculative_tag), OPSZ_lea)));
     added_size += tracelist_add_after(dcontext, trace, targeter, continue_label);
+#ifdef CROWD_SAFE_INTEGRATION
+    if (ibp_from_tag != int2p(0)) {
+        added_size += insert_indirect_link_branchpoint(dcontext, trace, ibp_from_tag,
+            targeter, ibp_is_return, -1);
+    }
+#endif
     return added_size;
 }
 
@@ -5338,7 +5397,8 @@ mangle_x64_ib_in_trace(dcontext_t *dcontext, instrlist_t *trace,
 static int
 mangle_indirect_branch_in_trace(dcontext_t *dcontext, instrlist_t *trace,
                                 instr_t *targeter, app_pc next_tag, uint next_flags,
-                                instr_t **delete_after/*OUT*/, instr_t *end_instr)
+                                instr_t **delete_after/*OUT*/, instr_t *end_instr,
+                                app_pc ibp_from_tag, bool ibp_is_return)
 {
     int added_size = 0;
     instr_t *next = instr_get_next(targeter);
@@ -5455,7 +5515,7 @@ mangle_indirect_branch_in_trace(dcontext_t *dcontext, instrlist_t *trace,
             /* if equal follow to the next instruction after the exit CTI */
             added_size +=
                 insert_transparent_comparison(dcontext, trace, targeter,
-                                              next_tag);
+                                              next_tag, ibp_from_tag, ibp_is_return);
             /* leave jmp as it is, a jmp to exit stub (thence to ind br
              * lookup) */
         }
@@ -5502,7 +5562,7 @@ mangle_indirect_branch_in_trace(dcontext_t *dcontext, instrlist_t *trace,
 
     /* If we do stay on the trace, must restore xcx
      * TODO optimization: check if xcx is live or not in next bb */
-    added_size += insert_restore_spilled_xcx(dcontext, trace, next);
+    added_size += insert_restore_spilled_xcx(dcontext, trace, next, ibp_is_return, ibp_from_tag);
 
 #ifdef X64
     if (X64_CACHE_MODE_DC(dcontext)) {
@@ -5563,7 +5623,8 @@ fixup_last_cti(dcontext_t *dcontext, instrlist_t *trace,
                fragment_t *prev_f, linkstub_t *prev_l,
                bool record_translation, uint *num_exits_deleted/*OUT*/,
                /* If non-NULL, only looks inside trace between these two */
-               instr_t *start_instr, instr_t *end_instr)
+               instr_t *start_instr, instr_t *end_instr, app_pc ibp_from_tag,
+               bool ibp_is_return)
 {
     app_pc target_tag;
     instr_t *inst, *targeter = NULL;
@@ -5675,7 +5736,8 @@ fixup_last_cti(dcontext_t *dcontext, instrlist_t *trace,
     if (is_indirect) {
         added_size += mangle_indirect_branch_in_trace(dcontext, trace, targeter,
                                                       next_tag, next_flags,
-                                                      &delete_after, end_instr);
+                                                      &delete_after, end_instr,
+                                                      ibp_from_tag, ibp_is_return);
     } else {
         /* direct jump or conditional branch */
         instr_t *next = targeter->next;
@@ -5705,6 +5767,18 @@ fixup_last_cti(dcontext_t *dcontext, instrlist_t *trace,
         } else
             ASSERT_NOT_REACHED();
     }
+
+#ifdef CROWD_SAFE_INTEGRATION
+    DODEBUG({
+        if (!is_indirect || !ibp_is_return) {
+            instr_t exit_cti_instr;
+            instr_init(dcontext, &exit_cti_instr);
+            ASSERT(!instr_is_return(&exit_cti_instr));
+            instr_free(dcontext, &exit_cti_instr);
+        }
+    });
+#endif
+
     /* remove all instrs after this cti -- but what if internal
      * control flow jumps ahead and then comes back?
      * too expensive to check for such all the time.
@@ -5848,7 +5922,7 @@ append_trace_speculate_last_ibl(dcontext_t *dcontext, instrlist_t *trace,
 
     /* leave jmp as it is, a jmp to exit stub (thence to ind br lookup) */
     added_size += 
-        insert_transparent_comparison(dcontext, trace, where, speculate_next_tag);
+        insert_transparent_comparison(dcontext, trace, where, speculate_next_tag, 0, false);
 
 #ifdef HASHTABLE_STATISTICS
     DOSTATS({
@@ -5904,7 +5978,7 @@ append_trace_speculate_last_ibl(dcontext_t *dcontext, instrlist_t *trace,
      */
 
     /* must restore xcx to app value, FIXME: see above for doing this in prefix+stub */
-    added_size += insert_restore_spilled_xcx(dcontext, trace, next);
+    added_size += insert_restore_spilled_xcx(dcontext, trace, next, false, NULL);
 
     /* add a new direct exit stub */
     added_size += tracelist_add(dcontext, trace, next, 
@@ -5983,7 +6057,7 @@ append_ib_trace_last_ibl_exit_stat(dcontext_t *dcontext, instrlist_t *trace,
          *   using a short jump to see if anyone erroneously uses this
          */
         added_size += 
-            insert_transparent_comparison(dcontext, trace, where, speculate_next_tag);
+            insert_transparent_comparison(dcontext, trace, where, speculate_next_tag, 0, false);
 
         /* we'll kill again although ECX restored unnecessarily by comparison routine,   */
         added_size += 
@@ -6013,7 +6087,7 @@ append_ib_trace_last_ibl_exit_stat(dcontext_t *dcontext, instrlist_t *trace,
  * (assumes the caller has already calculated the size from adding the new block)
  */
 uint
-extend_trace(dcontext_t *dcontext, fragment_t *f, linkstub_t *prev_l)
+extend_trace(dcontext_t *dcontext, fragment_t *f, linkstub_t *prev_l, bool ibp_is_return)
 {
     monitor_data_t *md = (monitor_data_t *) dcontext->monitor_field;
     fragment_t *prev_f = NULL;
@@ -6052,7 +6126,9 @@ extend_trace(dcontext_t *dcontext, fragment_t *f, linkstub_t *prev_l)
     if (instrlist_last(trace) != NULL) {
         prev_mangle_size = fixup_last_cti(dcontext, trace, f->tag, f->flags,
                                           md->trace_flags, prev_f, prev_l, false,
-                                          &num_exits_deleted, NULL, NULL);
+                                          &num_exits_deleted, NULL, NULL,
+                                          md->blk_info[md->num_blks-1].info.tag,
+                                          ibp_is_return);
     }
     
 #ifdef CUSTOM_TRACES_RET_REMOVAL
@@ -6063,6 +6139,7 @@ extend_trace(dcontext_t *dcontext, fragment_t *f, linkstub_t *prev_l)
 
     LOG(THREAD, LOG_MONITOR, 4,
         "\tadding block %d == "PFX"\n", md->num_blks, f->tag);
+    CS_DET("Extend trace "PX" with BB "PX"\n", md->trace_tag, f->tag);
 
     size = md->trace_buf_size - md->trace_buf_top;
     LOG(THREAD, LOG_MONITOR, 4, "decoding F%d into trace buf @"PFX" + 0x%x = "PFX"\n",
@@ -6377,6 +6454,7 @@ mangle_trace(dcontext_t *dcontext, instrlist_t *ilist, monitor_data_t *md)
         if (inst == md->blk_info[blk].end_instr) {
             /* Chain exit to point to next bb */
             if (blk + 1 < md->num_blks) {
+                instr_t exit_cti;
                 /* We must do proper analysis so that state translation matches
                  * created traces in whether eflags are restored post-cmp
                  */
@@ -6385,13 +6463,16 @@ mangle_trace(dcontext_t *dcontext, instrlist_t *ilist, monitor_data_t *md)
                 next_flags = instr_eflags_to_fragment_eflags(next_flags);
                 LOG(THREAD, LOG_INTERP, 4, "next_flags for fixup_last_cti: 0x%x\n",
                     next_flags);
+                instr_init(dcontext, &exit_cti);
+                decode_opcode(dcontext, md->blk_info[blk].end_instr->translation, &exit_cti);
                 fixup_last_cti(dcontext, ilist, md->blk_info[blk+1].info.tag,
                                next_flags,
                                md->trace_flags, NULL, NULL,
                                TEST(FRAG_HAS_TRANSLATION_INFO, md->trace_flags),
                                &num_exits_deleted,
                                /* Only walk ilist between these instrs */
-                               start_instr, inst);
+                               start_instr, inst, md->blk_info[blk].info.tag,
+                               instr_is_return(&exit_cti));
 #if defined(RETURN_AFTER_CALL) || defined(RCT_IND_BRANCH)
                 md->blk_info[blk].info.num_exits -= num_exits_deleted;
 #endif
@@ -6947,6 +7028,19 @@ decode_fragment(dcontext_t *dcontext, fragment_t *f, byte *buf, /*IN/OUT*/uint *
             });
             ASSERT(pc == stop_pc);
 
+#ifdef CROWD_SAFE_INTEGRATION
+            // check for IBL setup and if present, raise `pc` above it
+            if ((pc - IBL_SETUP_BYTE_COUNT) >= raw_start_pc) {
+                app_pc ibl_setup_next_pc;
+                app_pc ibl_setup_pc = (pc - IBL_SETUP_BYTE_COUNT);
+
+                instr_reset(dcontext, instr);
+                ibl_setup_next_pc = decode(dcontext, ibl_setup_pc, instr);
+                if (ibl_setup_next_pc != NULL && is_ibl_setup_instr(instr))
+                    pc = ibl_setup_pc;
+            }
+#endif
+
             /* create single raw instr for rest of instructions up to exit cti */
             if (pc > raw_start_pc) {
                 instr_reset(dcontext, instr);
@@ -6973,7 +7067,9 @@ decode_fragment(dcontext_t *dcontext, fragment_t *f, byte *buf, /*IN/OUT*/uint *
                         raw_start_pc, raw_start_pc + num_bytes, cur_buf,
                         cur_buf + num_bytes);
                 }
+#ifndef CROWD_SAFE_INTEGRATION
                 ASSERT(buf == NULL || cur_buf == top_buf);
+#endif
             } else {
                 /* will reach here if had a processed instr (off-fragment target, etc.)
                  * immediately prior to exit cti, so now don't need instr -- an
@@ -6991,7 +7087,7 @@ decode_fragment(dcontext_t *dcontext, fragment_t *f, byte *buf, /*IN/OUT*/uint *
             /* already created */
             instr = cti;
             ASSERT(info != NULL && info->frozen && instr_is_ubr(instr));
-            raw_start_pc = pc;
+            raw_start_pc = stop_pc;
         } else {
             instr = instr_create(dcontext);
             raw_start_pc = decode(dcontext, stop_pc, instr);

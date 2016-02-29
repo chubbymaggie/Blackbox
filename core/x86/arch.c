@@ -54,6 +54,12 @@
 
 #include <string.h> /* for memcpy */
 
+#ifdef CROWD_SAFE_INTEGRATION
+# include "../../ext/link-observer/link_observer.h"
+# include "../../ext/link-observer/indirect_link_observer.h"
+# include "../../ext/link-observer/crowd_safe_gencode.h"
+#endif
+
 #if defined(DEBUG) || defined(INTERNAL)
 # include "disassemble.h"
 #endif
@@ -302,6 +308,10 @@ shared_gencode_init(IF_X64_ELSE(gencode_mode_t gencode_mode, void))
     bool x86_to_x64_mode = false;
 #endif
 
+#ifdef CROWD_SAFE_INTEGRATION
+    notify_gencode_starting();
+#endif
+
     gencode = heap_mmap_reserve(GENCODE_RESERVE_SIZE, GENCODE_COMMIT_SIZE);
     /* we would return gencode and let caller assign, but emit routines
      * that this routine calls query the shared vars so we set here
@@ -525,6 +535,10 @@ shared_gencode_init(IF_X64_ELSE(gencode_mode_t gencode_mode, void))
 
     gencode->writable = true;
     protect_generated_code(gencode, READONLY);
+
+#ifdef CROWD_SAFE_INTEGRATION
+    notify_gencode_complete();
+#endif
 }
 
 #ifdef X64
@@ -796,6 +810,10 @@ emit_ibl_routine_and_template(dcontext_t *dcontext, generated_code_t *code,
     ibl_code->branch_type = branch_type;
     ibl_code->source_fragment_type = source_type;
 
+#ifdef CROWD_SAFE_INTEGRATION
+    track_ibl_routine(pc);
+#endif
+
     pc = emit_indirect_branch_lookup(dcontext, code, pc, fcache_return_pc,
                                      target_trace_table, inline_ibl_head,
                                      ibl_code);
@@ -805,13 +823,20 @@ emit_ibl_routine_and_template(dcontext_t *dcontext, generated_code_t *code,
         pc = emit_inline_ibl_stub(dcontext, pc, ibl_code, target_trace_table);
     }
 
+#ifdef CROWD_SAFE_INTEGRATION
+    track_ibl_routine(pc);
+#endif
+
     ibl_code->far_ibl = pc;
     pc = emit_far_ibl(dcontext, pc, ibl_code,
-                      ibl_code->indirect_branch_lookup_routine
+                      ibl_code->indirect_branch_lookup_routine, true
                       _IF_X64(&ibl_code->far_jmp_opnd));
+#ifdef CROWD_SAFE_INTEGRATION
+    track_ibl_routine(pc);
+#endif
     ibl_code->far_ibl_unlinked = pc;
     pc = emit_far_ibl(dcontext, pc, ibl_code,
-                      ibl_code->unlinked_ibl_entry
+                      ibl_code->unlinked_ibl_entry, false
                       _IF_X64(&ibl_code->far_jmp_unlinked_opnd));
 
     return pc;
@@ -881,6 +906,11 @@ static byte *
 emit_syscall_routines(dcontext_t *dcontext, generated_code_t *code, byte *pc,
                       bool thread_shared)
 {
+#ifdef CROWD_SAFE_INTEGRATION
+# ifdef WINDOWS
+    byte *shared_syscall_start;
+# endif
+#endif
 #ifdef HASHTABLE_STATISTICS
     /* Stats for the syscall IBLs (note it is also using the trace hashtable, and it never hits!) */
 # ifdef WINDOWS
@@ -926,6 +956,9 @@ emit_syscall_routines(dcontext_t *dcontext, generated_code_t *code, byte *pc,
 
         pc = check_size_and_cache_line(code, pc);
         code->unlinked_shared_syscall = pc;
+#ifdef CROWD_SAFE_INTEGRATION
+        shared_syscall_start = pc;
+#endif
         pc = emit_shared_syscall(dcontext, code, pc,
                                  &code->shared_syscall_code,
                                  &code->shared_syscall_code.ibl_patch,
@@ -952,6 +985,17 @@ emit_syscall_routines(dcontext_t *dcontext, generated_code_t *code, byte *pc,
          * restrictions) -- currently only traces supported so using the trace_ibl
          * is OK.
          */
+#ifdef CROWD_SAFE_INTEGRATION
+        track_shared_syscall_routine(shared_syscall_start);
+        // some jump to (pc + code->shared_syscall_code.ibl_patch->entry[0].where.offset)
+        {
+            uint i;
+            for (i = 0; i < 7; i++) {
+                track_shared_syscall_routine(shared_syscall_start +
+                    (UINT_PTR)code->shared_syscall_code.ibl_patch.entry[i].where.offset);
+            }
+        }
+#endif
     }
     pc = check_size_and_cache_line(code, pc);
     code->do_syscall = pc;
@@ -978,6 +1022,11 @@ emit_syscall_routines(dcontext_t *dcontext, generated_code_t *code, byte *pc,
 # endif
 #endif /* UNIX */
     
+#ifdef CROWD_SAFE_INTEGRATION
+    code->do_throw_exception = pc;
+    pc = emit_do_throw_exception(dcontext, code, pc);
+#endif
+
     return pc;
 }
 
@@ -1039,9 +1088,13 @@ arch_thread_init(dcontext_t *dcontext)
     pc = emit_fcache_enter(dcontext, code, pc);
     pc = check_size_and_cache_line(code, pc);
     code->fcache_return = pc;
-    pc = emit_fcache_return(dcontext, code, pc);;
+    pc = emit_fcache_return(dcontext, code, pc);
 #ifdef WINDOWS_PC_SAMPLE
     code->fcache_enter_return_end = pc;
+#endif
+
+#ifdef CROWD_SAFE_INTEGRATION
+    notify_gencode_starting();
 #endif
 
     /* Currently all ibl routines target the trace hashtable 
@@ -1088,6 +1141,10 @@ arch_thread_init(dcontext_t *dcontext)
                            code->bb_ibl);
 #ifdef WINDOWS_PC_SAMPLE
     code->ibl_routines_end = pc;
+#endif
+
+#ifdef CROWD_SAFE_INTEGRATION
+    notify_gencode_complete();
 #endif
 
 #if defined(UNIX) && !defined(HAVE_TLS)
@@ -1626,6 +1683,15 @@ get_do_vmkuw_syscall_entry(dcontext_t *dcontext)
     return (cache_pc) code->do_vmkuw_syscall;
 }
 # endif
+#endif
+
+#ifdef CROWD_SAFE_INTEGRATION
+cache_pc
+get_do_throw_exception_entry(dcontext_t *dcontext)
+{
+    generated_code_t *code = THREAD_GENCODE(dcontext);
+    return (cache_pc) code->do_throw_exception;
+}
 #endif
 
 cache_pc
@@ -4472,6 +4538,10 @@ check_syscall_method(dcontext_t *dcontext, instr_t *instr)
     }
 #else
     /* we assume only single method; else need multiple do_syscalls */
+    if (new_method != get_syscall_method()) {
+        CS_ERR("Error: established syscall method is %d, but instruction with opcode %d implies method %d\n",
+               get_syscall_method(), instr->opcode, new_method);
+    }
     ASSERT(new_method == get_syscall_method());
 #endif
 }

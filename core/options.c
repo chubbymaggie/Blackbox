@@ -477,6 +477,13 @@ set_dynamo_options_common(options_t *options, const char *optstr, bool for_this_
     void *value = NULL;
     bool value_true = true, value_false = false;
 
+#ifdef CROWD_SAFE
+    do {
+        opt = (char*)"-code_api";
+# include "optionsx.h"
+    } while false;
+#endif
+
     if (optstr == NULL)
         return 0;
 
@@ -944,7 +951,7 @@ check_option_compatibility_helper(int recurse_count)
         changed_options = true;
     }
 #endif
-#ifdef CLIENT_INTERFACE
+#if defined(CLIENT_INTERFACE) && !defined(CROWD_SAFE_INTEGRATION)
     /* case 9714: The client interface is compatible with the current default
      * protect_mask of 0x101, but is incompatible with the following:
      */

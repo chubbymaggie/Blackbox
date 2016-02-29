@@ -62,6 +62,12 @@
 #include "../perscache.h"
 #include "../native_exec.h"
 
+#ifdef CROWD_SAFE_INTEGRATION
+# include "../../ext/link-observer/crowd_safe_util.h"
+# include "../../ext/link-observer/crowd_safe_trace.h"
+# include "../../ext/link-observer/module_observer.h"
+#endif
+
 #ifdef NOT_DYNAMORIO_CORE_PROPER
 # undef ASSERT
 # undef ASSERT_NOT_IMPLEMENTED
@@ -150,6 +156,7 @@ static app_pc early_inject_address = NULL;
 static app_pc ldrpLoadDll_address_not_NT = NULL;
 static app_pc ldrpLoadDll_address_NT = NULL;
 static app_pc ldrpLoadImportModule_address = NULL;
+app_pc ldrpCallInitRoutine_address_NT = NULL;
 dcontext_t *early_inject_load_helper_dcontext = NULL;
 
 static char cwd[MAXIMUM_PATH];
@@ -208,6 +215,28 @@ get_nth_stack_frames_call_target(int num_frames, reg_t *ebp)
             app_pc return_point = (app_pc)next_frame[1];
             return (return_point + *(int *)&buf[1]);
         }
+    }
+    return NULL;
+}
+
+static app_pc
+get_nth_stack_frames_continuation_pc(int num_frames, reg_t *ebp)
+{
+    reg_t *cur_ebp = ebp;
+    reg_t next_frame[2];
+    int i;
+
+    /* walk up the stack */
+    for (i = 0; i < num_frames; i++) {
+        if (!safe_read(cur_ebp, sizeof(next_frame), next_frame))
+            break;
+        cur_ebp = (reg_t *)next_frame[0];
+    }
+
+    if (i == num_frames) {
+        /* success walking frames, return address should be the after
+         * call address of the call that targeted this frame */
+        return (app_pc)next_frame[1];
     }
     return NULL;
 }
@@ -347,6 +376,11 @@ DllMain(HANDLE hModule, DWORD reason_for_call, LPVOID Reserved)
              * but after this frame there are too many possibilites (many
              * of which are unexported) so is hard to find something we
              * can check. */
+
+#define STACK_DEPTH_LrdpCallInitRoutine_NT 1
+            ldrpCallInitRoutine_address_NT =
+                get_nth_stack_frames_continuation_pc(STACK_DEPTH_LrdpCallInitRoutine_NT,
+                                                     (reg_t *)cur_ebp);
         } else
             ASSERT(dynamo_initialized);
         break;
@@ -2966,6 +3000,21 @@ maybe_inject_into_process(dcontext_t *dcontext, HANDLE process_handle,
                                     should_inject)) {
                 check_for_run_once(process_handle, rununder_mask);
             }
+#ifdef CROWD_SAFE_INTEGRATION
+            {
+                wchar_t name[260], *name_ptr, *name_walk;
+
+                get_process_imgname_cmdline(process_handle, name,
+                                            BUFFER_SIZE_ELEMENTS(name),
+                                            NULL, 0);
+
+                for (name_ptr = name_walk = name; name_walk[0] != '\0'; name_walk++) {
+                    if (name_walk[0] == '\\')
+                        name_ptr = name_walk + 1;
+                }
+                notify_process_fork(dcontext, name_ptr);
+            }
+#endif
         }
     }
     return injected;
@@ -3949,6 +3998,21 @@ process_mmap(dcontext_t *dcontext, app_pc pc, size_t size, bool add, const char 
                               false /* not rewalking */, filepath);
         image_prot = mbi.Protect;
     }
+
+#ifdef CROWD_SAFE_INTEGRATION
+    if ((mbi.BaseAddress > PC(0)) && prot_is_executable(mbi.Protect) && !image) {
+        if (add) {
+            CS_DET("DMP| Adding executable memory region: "PX" +0x%x\n", mbi.BaseAddress, mbi.RegionSize);
+
+            add_shadow_pages(dcontext, mbi.BaseAddress, mbi.RegionSize, true);
+        } else {
+            CS_DET("DMP| Removing executable memory region: "PX" +0x%x\n", mbi.BaseAddress, mbi.RegionSize);
+
+            remove_shadow_pages(dcontext, mbi.BaseAddress, mbi.RegionSize);
+        }
+    }
+#endif
+
     /* Now update our vm areas executable region lists.
      * The protection flag doesn't tell us if there are executable areas inside,
      * must walk all the individual regions.
@@ -7425,6 +7489,10 @@ detach_helper(int detach_type)
     char buf[MAX_CONTEXT_SIZE];
     CONTEXT *cxt;
     DEBUG_DECLARE(bool ok;)
+
+#ifdef CROWD_SAFE_INTEGRATION
+    CS_LOG("detach!\n");
+#endif
 
     /* Caller (generic_nudge_handler) should have already checked these and
      * verified the nudge is valid. */

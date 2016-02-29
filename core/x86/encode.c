@@ -46,6 +46,11 @@
 
 #include <string.h> /* memcpy, memset */
 
+#ifdef CROWD_SAFE_INTEGRATION
+# include "../../ext/link-observer/indirect_link_observer.h"
+# include "../../ext/link-observer/crowd_safe_gencode.h"
+#endif
+
 #ifdef DEBUG
 /* case 10450: give messages to clients */
 /* we can't undef ASSERT b/c of DYNAMO_OPTION */
@@ -2799,6 +2804,10 @@ instr_encode_check_reachability(dcontext_t *dcontext, instr_t *instr, byte *pc,
 byte *
 instr_encode_to_copy(dcontext_t *dcontext, instr_t *instr, byte *copy_pc, byte *final_pc)
 {
+#ifdef CROWD_SAFE_INTEGRATION
+    notify_emitting_instruction(instr, copy_pc);
+#endif    
+
     return instr_encode_common(dcontext, instr, copy_pc, final_pc, true, NULL
                                _IF_DEBUG(true));
 }

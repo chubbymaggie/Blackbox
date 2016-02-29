@@ -55,6 +55,12 @@
 # include "nudge.h"
 #endif
 
+#ifdef CROWD_SAFE_INTEGRATION
+# include "../ext/link-observer/basic_block_observer.h"
+# include "../ext/link-observer/module_observer.h"
+# include "../ext/link-observer/crowd_safe_util.h"
+#endif
+
 /* FIXME: make these runtime parameters */
 #define INIT_HTABLE_SIZE_SHARED_BB    (DYNAMO_OPTION(coarse_units) ? 5 : 10)
 #define INIT_HTABLE_SIZE_SHARED_TRACE 10
@@ -3085,7 +3091,7 @@ fragment_delete(dcontext_t *dcontext, fragment_t *f, uint actions)
     }
 
     if (!TEST(FRAGDEL_NO_HTABLE, actions))
-        fragment_remove(dcontext, f);
+        fragment_remove(dcontext, f, false);
 
     if (!TEST(FRAGDEL_NO_VMAREA, actions))
         vm_area_remove_fragment(dcontext, f);
@@ -3174,7 +3180,7 @@ fragment_record_translation_info(dcontext_t *dcontext, fragment_t *f, instrlist_
  * This routine can be called without synchronizing with other threads.
  */
 void
-fragment_remove_shared_no_flush(dcontext_t *dcontext, fragment_t *f)
+fragment_remove_shared_no_flush(dcontext_t *dcontext, fragment_t *f, bool is_live_trace_component)
 {
     DEBUG_DECLARE(bool shared_ibt_table_used = !TEST(FRAG_IS_TRACE, f->flags) ?
                   DYNAMO_OPTION(shared_bb_ibt_tables) :
@@ -3228,7 +3234,7 @@ fragment_remove_shared_no_flush(dcontext_t *dcontext, fragment_t *f)
      */
     fragment_prepare_for_removal(GLOBAL_DCONTEXT, f);
     /* fragment_remove ignores the ibl tables for shared fragments */
-    fragment_remove(GLOBAL_DCONTEXT, f);
+    fragment_remove(GLOBAL_DCONTEXT, f, is_live_trace_component);
     /* FIXME: we don't currently remove from thread-private ibl tables as that
      * requires walking all of the threads. */
     ASSERT_NOT_IMPLEMENTED(!IS_IBL_TARGET(f->flags) || shared_ibt_table_used);
@@ -3328,7 +3334,7 @@ fragment_unlink_for_deletion(dcontext_t *dcontext, fragment_t *f)
      * incoming field at unlink time, and we must do all 3 of unlink,
      * vmarea, and htable freeing at once.
      */
-    fragment_remove(dcontext, f);
+    fragment_remove(dcontext, f, false);
 
     /* let recreate_fragment_ilist() know that this fragment is
      * pending deletion and might no longer match the app's state.
@@ -3827,10 +3833,23 @@ fragment_remove_all_ibl_in_region(dcontext_t *dcontext, app_pc start, app_pc end
 /* Removes f from any hashtables -- BB, trace, or future -- and IBT tables
  * it is in, except for shared IBT tables. */
 void
-fragment_remove(dcontext_t *dcontext, fragment_t *f)
+fragment_remove(dcontext_t *dcontext, fragment_t *f, bool is_live_trace_component)
 {
     per_thread_t *pt = GET_PT(dcontext);
     fragment_table_t *table = GET_FTABLE(pt, f->flags);
+
+#ifdef CROWD_SAFE_INTEGRATION
+    if (TEST(FRAG_IS_TRACE, f->flags) && TEST(FRAG_SHARED, f->flags)) {
+        CS_DET("Removing trace "PX" with flags 0x%x\n", f->tag, f->flags);
+        notify_basic_block_removed(dcontext, f->tag);
+    } else if (!(is_live_trace_component && TEST(FRAG_SHARED, f->flags)) &&
+               !TEST(FRAG_IS_TRACE, f->flags) && !TEST(FRAG_TEMP_PRIVATE, f->flags)) {
+        if (f->also.also_vmarea != NULL)
+            CS_WARN("Removing one of multiple versions of BB "PX"!\n", f->tag);
+        CS_DET("Removing BB "PX" with flags 0x%x\n", f->tag, f->flags);
+        notify_basic_block_removed(dcontext, f->tag);
+    }
+#endif
 
     ASSERT(TEST(FRAG_SHARED, f->flags) || dcontext != GLOBAL_DCONTEXT);
     /* For consistency we remove entries from the IBT
@@ -5779,7 +5798,7 @@ enter_nolinking(dcontext_t *dcontext, fragment_t *was_I_flushed, bool cache_tran
     }
 #endif
 
-#ifdef CLIENT_INTERFACE
+#if defined(CLIENT_INTERFACE) && !defined(CROWD_SAFE_INTEGRATION)
     /* Handle flush requests queued via dr_flush_fragments()/dr_delay_flush_region() */
     /* thread private list */
     process_client_flush_requests(dcontext, dcontext, dcontext->client_data->flush_list,
@@ -6002,6 +6021,10 @@ flush_fragments_synchall_start(dcontext_t *ignored, app_pc base, size_t size,
     LOG(GLOBAL, LOG_FRAGMENT, 2, 
         "\nflush_fragments_synchall_start: thread %d suspending all threads\n",
         get_thread_id());
+
+#ifdef CROWD_SAFE_INTEGRATION
+    CS_LOG("Synching to flush frags\n");
+#endif
 
     STATS_INC(flush_synchall);
     /* suspend all DR-controlled threads at safe locations */

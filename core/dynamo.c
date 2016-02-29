@@ -66,6 +66,13 @@
 
 #include <string.h>
 
+#ifdef CROWD_SAFE
+#include "../ext/link-observer/link_observer.h"
+#include "../ext/link-observer/module_observer.h"
+#include "../ext/link-observer/crowd_safe_util.h"
+file_t early_logfile = INVALID_FILE;
+#endif
+
 #ifdef WINDOWS
 /* for close handle, duplicate handle, free memory and constants associated with them */
 /* also for nt_terminate_process_for_app() */
@@ -260,6 +267,8 @@ DECLARE_CXTSWPROT_VAR(mutex_t thread_initexit_lock,
 DECLARE_CXTSWPROT_VAR(static recursive_lock_t thread_in_DR_exclusion,
                       INIT_RECURSIVE_LOCK(thread_in_DR_exclusion));
 
+uint64 process_start_time;
+
 /****************************************************************************/
 #ifdef DEBUG
 
@@ -359,6 +368,10 @@ DYNAMORIO_EXPORT int
 dynamorio_app_init(void)
 {
     int size;
+#ifdef CROWD_SAFE
+    process_start_time = dr_get_milliseconds();
+    init_crowd_safe_log(false);
+#endif
 
     if (!dynamo_initialized /* we do enter if nullcalls is on */) {
 
@@ -404,6 +417,12 @@ dynamorio_app_init(void)
 
         config_init();
         options_init();
+#if defined(DEBUG) && defined(CROWD_SAFE)
+        if (stats->loglevel > 0) {
+            main_logfile = create_early_dr_log();
+            early_logfile = main_logfile;
+        }
+#endif
 #ifdef WINDOWS
         syscalls_init_options_read(); /* must be called after options_init
                                        * but before init_syscall_trampolines */
@@ -412,6 +431,11 @@ dynamorio_app_init(void)
         data_section_init();
 
 #ifdef DEBUG
+# ifdef CROWD_SAFE
+        if (stats->loglevel > 0) {
+            main_logfile = INVALID_FILE;
+        }
+# endif
         /* decision: nullcalls WILL create a dynamorio.log file and
          * fill it with perfctr stats!
          */
@@ -473,6 +497,10 @@ dynamorio_app_init(void)
         vmm_heap_init(); /* must be called even if not using vmm heap */
         heap_init();
         dynamo_heap_initialized = true;
+
+#ifdef CROWD_SAFE_INTEGRATION
+        init_link_observer(GLOBAL_DCONTEXT, false);
+#endif
 
         /* The process start event should be done after os_init() but before
          * process_control_int() because the former initializes event logging
@@ -545,6 +573,10 @@ dynamorio_app_init(void)
         moduledb_init(); /* before vm_areas_init, after heap_init */
         perscache_init(); /* before vm_areas_init */
         native_exec_init(); /* before vm_areas_init, after arch_init */
+
+#ifdef CROWD_SAFE_INTEGRATION
+        notify_dynamo_model_initialized();
+#endif
 
         if (!DYNAMO_OPTION(thin_client)) {
 #ifdef HOT_PATCHING_INTERFACE
@@ -680,6 +712,10 @@ dynamorio_app_init(void)
 #endif
     }
 
+#ifdef CROWD_SAFE_INTEGRATION
+    notify_dynamo_initialized();
+#endif
+
     dynamo_initialized = true;
 
     /* Protect .data, assuming all vars there have been initialized. */
@@ -697,6 +733,11 @@ dynamorio_app_init(void)
         destroy_event(never_signaled);
     }
 
+#ifdef CROWD_SAFE
+        if (stats->loglevel > 0)
+            dr_close_file(early_logfile);
+#endif
+
     return SUCCESS;
 }
 
@@ -704,6 +745,9 @@ dynamorio_app_init(void)
 void
 dynamorio_fork_init(dcontext_t *dcontext)
 {
+#ifdef CROWD_SAFE
+    init_link_observer(dcontext, true);
+#endif
     /* on a fork we want to re-initialize some data structures, especially
      * log files, which we want a separate directory for
      */
@@ -1109,6 +1153,8 @@ synch_with_threads_at_exit(thread_synch_state_t synch_res)
     wait_for_outstanding_nudges();
 #endif
 
+    CS_LOG("Synch all threads for exit\n");
+
     /* xref case 8747, requesting suspended is preferable to terminated and it
      * doesn't make a difference here which we use (since the process is about
      * to die).  
@@ -1143,6 +1189,10 @@ synch_with_threads_at_exit(thread_synch_state_t synch_res)
      * are waiting on it won't get in our way (see thread_init()) */
     dynamo_exited = true;
     end_synch_with_all_threads(threads, num_threads, false/*don't resume*/);
+
+#ifdef CROWD_SAFE
+    destroy_link_observer();
+#endif
 }
 
 #ifdef DEBUG
@@ -1198,6 +1248,8 @@ dynamo_process_exit_cleanup(void)
          * but it will only global log and do thread_lookup which should be 
          * safe throughout) */
 
+        CS_LOG("Exit pre-client\n");
+
         /* In order to pass the client a dcontext in the process exit event
          * we do some thread cleanup early for the final thread so we can delay
          * the rest (PR 536058).  This is a little risky in that we
@@ -1221,6 +1273,8 @@ dynamo_process_exit_cleanup(void)
 #else /* UNIX */
         unhook_vsyscall();
 #endif /* UNIX */
+
+        CS_LOG("Shared exit\n");
 
         return dynamo_shared_exit(IF_WINDOWS_(NULL) /* not detaching */
                                   IF_WINDOWS(false /* not detaching */));
@@ -1258,6 +1312,9 @@ dynamo_process_exit(void)
 #ifndef DEBUG
     bool each_thread;
 #endif
+
+    CS_LOG("Process exit\n");
+
     SELF_UNPROTECT_DATASEC(DATASEC_RARELY_PROT);
     synchronize_dynamic_options();
     SYSLOG(SYSLOG_INFORMATION, INFO_PROCESS_STOP, 
@@ -1282,11 +1339,20 @@ dynamo_process_exit(void)
         }
     }
 
+# ifdef CROWD_SAFE
+    if (dynamo_exited)
+        close_crowd_safe_log();
+# endif
+
     return SUCCESS;
 
-#else
-    if (dynamo_exited)
+#else /* DEBUG */
+    if (dynamo_exited) {
+# ifdef CROWD_SAFE
+        close_crowd_safe_log();
+# endif
         return SUCCESS;
+    }
 
     /* don't need to do much!
      * we didn't create any IPC objects or anything that might be persistent
@@ -1346,6 +1412,9 @@ dynamo_process_exit(void)
                 /* We always want to call this for CI builds so we can get the
                  * dr_fragment_deleted() callbacks.
                  */
+#ifdef CROWD_SAFE_INTEGRATION
+                link_observer_thread_exit(threads[i]->dcontext);
+#endif
                 fragment_thread_exit(threads[i]->dcontext);
 # ifdef UNIX
             if (INTERNAL_OPTION(profile_pcs))
@@ -1411,6 +1480,10 @@ dynamo_process_exit(void)
     /* so make sure eventlog connection is terminated (if present)  */
     os_fast_exit();
 
+#ifdef CROWD_SAFE
+    if (dynamo_exited)
+        close_crowd_safe_log();
+#endif
     return SUCCESS;
 #endif /* !DEBUG */
 }
@@ -2137,6 +2210,9 @@ dynamo_thread_init(byte *dstack_in, priv_mcontext_t *mc
     fcache_thread_init(dcontext);
     link_thread_init(dcontext);
     fragment_thread_init(dcontext);
+#ifdef CROWD_SAFE_INTEGRATION
+    link_observer_thread_init(dcontext);
+#endif
 
     /* This lock has served its purposes: A) a barrier to thread creation for those
      * iterating over threads, B) mutex for add_thread, and C) mutex for synch_field
@@ -2148,7 +2224,9 @@ dynamo_thread_init(byte *dstack_in, priv_mcontext_t *mc
 
 #ifdef CLIENT_INTERFACE
     /* Set up client data needed in loader_thread_init for IS_CLIENT_THREAD */
+# ifndef CROWD_SAFE_INTEGRATION
     instrument_client_thread_init(dcontext, client_thread);
+# endif
 #endif
 
     loader_thread_init(dcontext);
@@ -2215,6 +2293,9 @@ dynamo_thread_exit_pre_client(dcontext_t *dcontext, thread_id_t id)
      * monitor_thread_exit remains later b/c of monitor_remove_fragment calls
      */
     trace_abort_and_delete(dcontext);
+#ifdef CROWD_SAFE_INTEGRATION
+    link_observer_thread_exit(dcontext);
+#endif
     fragment_thread_exit(dcontext);
 #ifdef CLIENT_INTERFACE
     instrument_thread_exit_event(dcontext);

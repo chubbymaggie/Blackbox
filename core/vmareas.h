@@ -297,6 +297,9 @@ vm_areas_thread_reset_free(dcontext_t *dcontext);
 bool
 is_executable_address(app_pc addr);
 
+bool
+is_executable_address_locked(app_pc addr);
+
 /* if addr is an executable area, returns true and returns in *flags
  *   any FRAG_ flags associated with addr's vm area 
  * returns false if area not found 
@@ -496,6 +499,12 @@ vm_area_coarse_iter_stop(vmvector_iterator_t *vmvi);
 void
 vm_area_delay_load_coarse_units(void);
 #endif
+
+void
+executable_areas_read_lock();
+
+void
+executable_areas_read_unlock();
 
 void
 executable_areas_lock(void);

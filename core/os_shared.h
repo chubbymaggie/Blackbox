@@ -226,6 +226,7 @@ os_using_app_state(dcontext_t *dcontext);
 void
 os_swap_context(dcontext_t *dcontext, bool to_app, dr_state_flags_t flags);
 
+bool is_benign_alloc(dcontext_t *dcontext);
 bool pre_system_call(dcontext_t *dcontext);
 void post_system_call(dcontext_t *dcontext);
 

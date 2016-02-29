@@ -45,6 +45,13 @@
 #include "instrument.h"
 #include "../synch.h"
 
+#ifdef CROWD_SAFE_INTEGRATION
+# include "../../ext/link-observer/crowd_safe_trace.h"
+# include "../../ext/link-observer/crowd_safe_util.h"
+# include "../../ext/link-observer/module_observer.h"
+# include "../../ext/link-observer/network_monitor.h"
+#endif
+
 /* this points to one of the os-version-specific system call # arrays below */
 int *syscalls = NULL;
 /* this points to one of the os-version-specific wow64 argument conversion arrays */
@@ -1448,6 +1455,10 @@ presys_TerminateProcess(dcontext_t *dcontext, reg_t *param_base)
         copy_mcontext(mc, &mcontext);
         mc->pc = SYSCALL_PC(dcontext);
 
+#ifdef CROWD_SAFE_INTEGRATION
+        CS_LOG("presys_TerminateProcess\n");
+#endif
+
 #ifdef CLIENT_INTERFACE
         /* make sure client nudges are finished */
         wait_for_outstanding_nudges();
@@ -1470,6 +1481,10 @@ presys_TerminateProcess(dcontext_t *dcontext, reg_t *param_base)
         ASSERT(ok);
         ASSERT(threads == NULL && num_threads == 0); /* We asked for CLEANED */
         copy_mcontext(&mcontext, mc);
+
+#ifdef CROWD_SAFE_INTEGRATION
+        notify_process_terminating(false);
+#endif
 
         /* we hold the initexit lock at this point, but we cannot release
          * it, b/c a new thread waiting on it could start initializing and
@@ -2372,13 +2387,16 @@ presys_CreateSection(dcontext_t *dcontext, reg_t *param_base)
 static void
 presys_Close(dcontext_t *dcontext, reg_t *param_base)
 {
+    HANDLE handle = (HANDLE) sys_param(dcontext, param_base, 0);
+
     if (DYNAMO_OPTION(track_module_filenames)) {
-        HANDLE handle = (HANDLE) sys_param(dcontext, param_base, 0);
         if (section_to_file_remove(handle)) {
             LOG(THREAD, LOG_SYSCALLS|LOG_VMAREAS, 2,
                 "syscall: NtClose of section handle "PFX"\n", handle);
         }
     }
+    if (CROWD_SAFE_NETWORK_MONITOR())
+        socket_handle_remove(dcontext, handle);
 }
 
 #ifdef DEBUG
@@ -2410,6 +2428,19 @@ presys_OpenFile(dcontext_t *dcontext, reg_t *param_base)
     }
 }
 #endif
+
+bool
+is_benign_alloc(dcontext_t *dcontext)
+{
+    priv_mcontext_t *mc = get_mcontext(dcontext);
+    int sysnum = (int) mc->xax;
+    if (sysnum == syscalls[SYS_AllocateVirtualMemory]) {
+        reg_t *param_base = (reg_t *) mc->xdx + (SYSCALL_PARAM_OFFSET() / sizeof(reg_t));
+        uint prot = (uint) sys_param(dcontext, param_base, 5);
+        return !TEST(MEMPROT_EXEC, osprot_to_memprot(prot));
+    }
+    return false;
+}
 
 /* WARNING: flush_fragments_and_remove_region assumes that pre and post system
  * call handlers do not examine or modify fcache or its fragments in any
@@ -2455,6 +2486,11 @@ pre_system_call(dcontext_t *dcontext)
         dump_callstack(POST_SYSCALL_PC(dcontext), (app_pc) mc->xbp, THREAD,
                        DUMP_NOT_XML);
     });
+#endif
+
+#ifdef CROWD_SAFE_INTEGRATION
+    crowd_safe_heartbeat(dcontext);
+    CS_DET("Syscall %d\n", sysnum);
 #endif
 
     /* save key register values for post_system_call (they get clobbered
@@ -3083,6 +3119,15 @@ postsys_AllocateVirtualMemory(dcontext_t *dcontext, reg_t *param_base, bool succ
             pbase, psize);
         return;
     }
+
+#ifdef CROWD_SAFE_INTEGRATION
+    if ((base > PC(0)) && prot_is_executable(prot)) {
+        CS_DET("DMP| Executable memory allocation: "PX" +0x%x\n", base, size);
+
+        add_shadow_pages(dcontext, base, size, is_phandle_me(process_handle));
+    }
+#endif
+
     LOG(THREAD, LOG_SYSCALLS|LOG_VMAREAS, prot_is_executable(prot) ? 1U : 2U,
         "syscall: NtAllocateVirtualMemory%s%s%s@"PFX" sz="PIFX" prot=%s 0x%x => 0x%x\n",
         is_phandle_me(process_handle) ? "" : " IPC",
@@ -3715,6 +3760,136 @@ postsys_DuplicateObject(dcontext_t *dcontext, reg_t *param_base, bool success)
     }
 }
 
+/* ZwDeviceIoControlFile */
+static void
+postsys_DeviceIoControlFile(dcontext_t *dcontext, reg_t *param_base, bool success, uint result)
+{
+    if (success) {
+        HANDLE socket = (HANDLE) postsys_param(dcontext, param_base, 0);
+        HANDLE event = (HANDLE) postsys_param(dcontext, param_base, 1);
+        IO_STATUS_BLOCK *status_block = (IO_STATUS_BLOCK *) postsys_param(dcontext, param_base, 4);
+        IoControlCode control_code = (uint) postsys_param(dcontext, param_base, 5);
+        byte *input_data = (byte *) postsys_param(dcontext, param_base, 6);
+        uint input_length = (uint) postsys_param(dcontext, param_base, 7);
+        byte *output_data = (byte *) postsys_param(dcontext, param_base, 8);
+        uint output_length = (uint) postsys_param(dcontext, param_base, 9);
+
+        notify_device_io_control(dcontext, result, socket, event, status_block, control_code,
+            input_data, input_length, output_data, output_length);
+    }
+}
+
+/* NtWaitForSingleObject */
+static void
+postsys_WaitForSingleObject(dcontext_t *dcontext, reg_t *param_base, bool success)
+{
+    //NTSTATUS NtWaitForSingleObject(IN HANDLE Handle,IN BOOLEAN Alertable ,IN PLARGE_INTEGER Timeout OPTIONAL);
+    if (success) {
+        HANDLE handle = (HANDLE) postsys_param(dcontext, param_base, 0);
+        notify_wait_for_single_object(dcontext, handle);
+    }
+}
+
+
+/* WaitForMultipleObjects */
+static void
+postsys_WaitForMultipleObjects(dcontext_t *dcontext, reg_t *param_base, bool success, uint result)
+{
+    //DWORD WaitForMultipleObjects(_In_ DWORD nCount, _In_ const HANDLE *lpHandles, _In_ BOOL bWaitAll, _In_ DWORD dwMilliseconds);
+    if (success) {
+        uint handle_count = (uint) postsys_param(dcontext, param_base, 0);
+        HANDLE *handles = (HANDLE*) postsys_param(dcontext, param_base, 1);
+        bool wait_all = (bool) postsys_param(dcontext, param_base, 2);
+        notify_wait_for_multiple_objects(dcontext, result, handle_count, handles, wait_all);
+    }
+}
+
+/* CreateIoCompletion */
+static void
+postsys_CreateIoCompletion(dcontext_t *dcontext, reg_t *param_base, bool success)
+{
+    // NTSTATUS NtCreateIoCompletion(_Out_ PHANDLE IoCompletionHandle,
+    // _In_ ACCESS_MASK DesiredAccess,
+    // _In_opt_ POBJECT_ATTRIBUTES ObjectAttributes,
+    // _In_ ULONG NumberOfConcurrentThreads);
+    if (success) {
+        HANDLE completion_handle = (HANDLE) postsys_param(dcontext, param_base, 0);
+        ACCESS_MASK access = (ACCESS_MASK) postsys_param(dcontext, param_base, 1);
+        POBJECT_ATTRIBUTES *attributes = (POBJECT_ATTRIBUTES *) postsys_param(dcontext, param_base, 2);
+        uint max_threads = (uint) postsys_param(dcontext, param_base, 3);
+        //CS_LOG("CreateIoCompletion: 0x%x, 0x%x, "PX", 0x%x\n", completion_handle,
+        //    access, attributes, max_threads);
+    }
+}
+
+/* SetIoCompletion */
+static void
+postsys_SetIoCompletion(dcontext_t *dcontext, reg_t *param_base, bool success)
+{
+    // NTSTATUS NtSetIoCompletion(_In_ HANDLE IoCompletionPortHandle,
+    // _In_ PVOID CompletionKey,
+    // _In_ PVOID CompletionContext,
+    // _In_ NTSTATUS CompletionStatus,
+    // _In_ ULONG CompletionInformation);
+    if (false) { // if (success) {
+        HANDLE completion_handle = (HANDLE) postsys_param(dcontext, param_base, 0);
+        uint completion_key = *(uint *) postsys_param(dcontext, param_base, 1);
+        void *completion_context = (void *) postsys_param(dcontext, param_base, 2);
+        NTSTATUS status = (NTSTATUS) postsys_param(dcontext, param_base, 3);
+        uint completion_info = (uint) postsys_param(dcontext, param_base, 4);
+        //CS_LOG("SetIoCompletion: 0x%x, 0x%x, "PX", 0x%x, 0x%x\n", completion_handle,
+        //    completion_key, completion_context, status, completion_info);
+    }
+}
+
+/* RemoveIoCompletion */
+static void
+postsys_RemoveIoCompletion(dcontext_t *dcontext, reg_t *param_base, bool success)
+{
+    // NTSTATUS ZwRemoveIoCompletion (IN HANDLE IoCompletionHandle,
+    // OUT PULONG CompletionKey,
+    // OUT PULONG CompletionValue,
+    // OUT PIO_STATUS_BLOCK IoStatusBlock,
+    // IN PLARGE_INTEGER Timeout OPTIONAL);
+    if (success) {
+        HANDLE completion_handle = (HANDLE) postsys_param(dcontext, param_base, 0);
+        uint completion_key = *(uint *) postsys_param(dcontext, param_base, 1);
+        uint completion_value = *(uint *) postsys_param(dcontext, param_base, 2);
+        IO_STATUS_BLOCK *status_block = (IO_STATUS_BLOCK *) postsys_param(dcontext, param_base, 3);
+        //CS_LOG("RemoveIoCompletion: 0x%x, 0x%x, 0x%x, "PX"\n",
+        //    completion_handle, completion_key, completion_value, status_block);
+    }
+}
+
+/* CreateFile */
+static void
+postsys_CreateFile(dcontext_t *dcontext, reg_t *param_base, bool success)
+{
+    if (success) {
+        HANDLE handle = *(HANDLE *) postsys_param(dcontext, param_base, 0);
+        ACCESS_MASK access = (ACCESS_MASK) postsys_param(dcontext, param_base, 1);
+        POBJECT_ATTRIBUTES *attributes = (POBJECT_ATTRIBUTES *) postsys_param(dcontext, param_base, 2);
+        IO_STATUS_BLOCK *status_block = (IO_STATUS_BLOCK *) postsys_param(dcontext, param_base, 3);
+        uint file_attributes = (uint) postsys_param(dcontext, param_base, 5);
+        uint share_access = (uint) postsys_param(dcontext, param_base, 6);
+        uint create_disposition = (uint) postsys_param(dcontext, param_base, 7);
+        uint create_options = (uint) postsys_param(dcontext, param_base, 8);
+        char *ea_buffer = (char *) postsys_param(dcontext, param_base, 9);
+        uint ea_length = (uint) postsys_param(dcontext, param_base, 10);
+        //CS_LOG("CreateFile: 0x%x, 0x%x, "PX", "PX", 0x%x, 0x%x, 0x%x, 0x%x, "PX", 0x%x\n",
+        //    handle, access, attributes, status_block, file_attributes, share_access,
+        //    create_disposition, create_options, ea_buffer, ea_length);
+
+        if (ea_length > 0) {
+            const char *handle_type = (ea_buffer + 8);
+            if (strcmp(handle_type, "AfdOpenPacketXX") == 0)
+                notify_socket_created(handle);
+            else
+                CS_LOG("CreateFile of type '%s'\n", handle_type);
+        }
+    }
+}
+
 #ifdef CLIENT_INTERFACE
 /* i#537: sysenter returns to KiFastSystemCallRet from kernel, and returns to DR
  * from there. We restore the correct app return target and re-execute
@@ -3945,6 +4120,25 @@ void post_system_call(dcontext_t *dcontext)
             ASSERT_CURIOSITY(success || !is_phandle_me(process_handle));
         }
 #endif /* DEBUG */
+    }
+    else if (CROWD_SAFE_NETWORK_MONITOR()) {
+        if (sysnum == syscalls[SYS_CreateFile]) {
+            postsys_CreateFile(dcontext, param_base, success);
+        } else if (sysnum == syscalls[SYS_DeviceIoControlFile]) {
+            postsys_DeviceIoControlFile(dcontext, param_base, success, mc->xax);
+        } else if (sysnum == syscalls[SYS_WaitForSingleObject]) {
+            postsys_WaitForSingleObject(dcontext, param_base, success);
+        } else if (sysnum == syscalls[SYS_WaitForMultipleObjects]) {
+            postsys_WaitForMultipleObjects(dcontext, param_base, success, mc->xax);
+        } else if (sysnum == syscalls[SYS_WaitForMultipleObjects32]) {
+            postsys_WaitForMultipleObjects(dcontext, param_base, success, mc->xax);
+        } else if (sysnum == syscalls[SYS_CreateIoCompletion]) {
+            postsys_CreateIoCompletion(dcontext, param_base, success);
+        } else if (sysnum == syscalls[SYS_SetIoCompletion]) {
+            postsys_SetIoCompletion(dcontext, param_base, success);
+        } else if (sysnum == syscalls[SYS_RemoveIoCompletion]) {
+            postsys_RemoveIoCompletion(dcontext, param_base, success);
+        }
     }
 
 

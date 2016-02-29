@@ -53,6 +53,11 @@
 #include "perscache.h"
 #include "disassemble.h"
 
+#ifdef CROWD_SAFE_INTEGRATION
+# include "../../ext/link-observer/crowd_safe_util.h"
+# include "../../ext/link-observer/crowd_safe_gencode.h"
+#endif
+
 #ifdef CLIENT_INTERFACE
 /* in interp.c.  not declared in arch_exports.h to avoid having to go
  * make monitor_data_t opaque in globals.h.
@@ -281,6 +286,30 @@ extend_unmangled_ilist(dcontext_t *dcontext, fragment_t *f)
 }
 #endif
 
+static void
+thcounter_init(dcontext_t *dcontext)
+{
+    monitor_data_t *md = (monitor_data_t *) dcontext->monitor_field;
+
+    /* FIXME : we should gather statistics on the hash table */
+    /* trace head counters are thread-private and must be kept in a
+     * separate table and not in the fragment_t structure.
+     */
+    md->thead_table.hash_mask = HASH_MASK(md->thead_table.hash_bits);
+    md->thead_table.hash_mask_offset = 0;
+    md->thead_table.hash_func = (hash_function_t)INTERNAL_OPTION(alt_hash_func);
+    md->thead_table.capacity = HASHTABLE_SIZE(md->thead_table.hash_bits);
+    md->thead_table.entries = 0;
+    md->thead_table.load_factor_percent = COUNTER_TABLE_LOAD;
+    md->thead_table.resize_threshold =
+        md->thead_table.capacity * md->thead_table.load_factor_percent / 100;
+    md->thead_table.counter_table = (trace_head_counter_t **)
+        COUNTER_ALLOC(dcontext, md->thead_table.capacity*sizeof(trace_head_counter_t*)
+                      HEAPACCT(ACCT_THCOUNTER));
+    memset(md->thead_table.counter_table, 0, md->thead_table.capacity*
+           sizeof(trace_head_counter_t*));
+}
+
 bool
 mangle_trace_at_end(void)
 {
@@ -435,11 +464,49 @@ thcounter_lookup(dcontext_t *dcontext, app_pc tag)
     return NULL;
 }
 
+static void
+thcounter_insert(trace_head_table_t *t, trace_head_counter_t *e)
+{
+    uint hindex;
+    hindex = HASH_FUNC((ptr_uint_t)e->tag, t);
+    e->next = t->counter_table[hindex];
+    t->counter_table[hindex] = e;
+    t->entries++;
+}
+
+static void
+thcounter_resize(dcontext_t *dcontext, trace_head_table_t *t)
+{
+    trace_head_counter_t *e, *prev_e, *next_e;
+    trace_head_counter_t **old_counter_table = t->counter_table;
+    uint old_capacity = t->capacity;
+    uint i;
+
+    /* ensure no synch needed */
+    ASSERT(dcontext == get_thread_private_dcontext() ||
+           is_self_flushing() || is_self_allsynch_flushing());
+
+    t->hash_bits += 2;
+    thcounter_init(dcontext);
+
+    for (i = 0; i < old_capacity; i++) {
+        for (e = old_counter_table[i], prev_e = NULL; e != NULL; e = next_e) {
+            next_e = e->next;
+            thcounter_insert(t, e);
+        }
+    }
+
+    COUNTER_FREE(dcontext, old_counter_table, old_capacity*sizeof(trace_head_counter_t*)
+                 HEAPACCT(ACCT_THCOUNTER));
+
+    CS_NOLOCK_LOG("Trace head table resized to capacity 0x%x on dc "PFX"\n",
+                  t->capacity, dcontext);
+}
+
 static trace_head_counter_t *
 thcounter_add(dcontext_t *dcontext, app_pc tag)
 {
     monitor_data_t *md = (monitor_data_t *) dcontext->monitor_field;
-    uint hindex;
     /* counters may be persistent while fragment comes and goes from cache */
     trace_head_counter_t *e = thcounter_lookup(dcontext, tag);
     if (e)
@@ -448,9 +515,9 @@ thcounter_add(dcontext_t *dcontext, app_pc tag)
         COUNTER_ALLOC(dcontext, sizeof(trace_head_counter_t) HEAPACCT(ACCT_THCOUNTER));
     e->tag = tag;
     e->counter = 0;
-    hindex = HASH_FUNC((ptr_uint_t)e->tag, &md->thead_table);
-    e->next = md->thead_table.counter_table[hindex];
-    md->thead_table.counter_table[hindex] = e;
+    if (md->thead_table.entries >= md->thead_table.resize_threshold)
+        thcounter_resize(dcontext, &md->thead_table);
+    thcounter_insert(&md->thead_table, e);
     return e;
 }
 
@@ -468,6 +535,7 @@ thcounter_remove(dcontext_t *dcontext, app_pc tag)
                 prev_e->next = e->next;
             else
                 md->thead_table.counter_table[hindex] = e->next;
+            md->thead_table.entries--;
             COUNTER_FREE(dcontext, e, sizeof(trace_head_counter_t) HEAPACCT(ACCT_THCOUNTER));
             break;
         }
@@ -494,6 +562,7 @@ thcounter_range_remove(dcontext_t *dcontext, app_pc start, app_pc end)
                     prev_e->next = next_e;
                 else
                     md->thead_table.counter_table[i] = next_e;
+                md->thead_table.entries--;
                 COUNTER_FREE(dcontext, e, sizeof(trace_head_counter_t)
                              HEAPACCT(ACCT_THCOUNTER));
             } else
@@ -751,6 +820,7 @@ mark_trace_head(dcontext_t *dcontext_in, fragment_t *f, fragment_t *src_f,
         (dcontext_in == GLOBAL_DCONTEXT) ? get_thread_private_dcontext() : dcontext_in;
     ASSERT(dcontext != NULL);
 
+    CS_DET("Marking "PX" as trace head\n", f->tag);
     LOG(THREAD, LOG_MONITOR, 4, "marking F%d ("PFX") as trace head\n", f->id, f->tag);
     ASSERT(!TEST(FRAG_IS_TRACE, f->flags));
     ASSERT(!NEED_SHARED_LOCK(f->flags) ||
@@ -1288,7 +1358,7 @@ end_and_emit_trace(dcontext_t *dcontext, fragment_t *cur_f)
         }
     });
 
-#ifdef CLIENT_INTERFACE
+#if defined(CLIENT_INTERFACE) && !defined (CROWD_SAFE_INTEGRATION)
     if (md->pass_to_client) {
         /* PR 299808: we pass the unmangled ilist we've been maintaining to the
          * client, and we have to then re-mangle and re-connect.
@@ -1380,6 +1450,17 @@ end_and_emit_trace(dcontext_t *dcontext, fragment_t *cur_f)
                 }
             }
         }
+    }
+
+    if (LINKSTUB_INDIRECT(dcontext->last_exit->flags)) {
+        instr_t *inst = instrlist_last(trace);
+        bool ibp_is_return = (instrlist_last(&md->unmangled_ilist) != NULL &&
+            instr_is_return(instrlist_last(&md->unmangled_ilist)));
+        ASSERT(inst != NULL);
+        ASSERT(instr_is_exit_cti(inst));
+        md->emitted_size += insert_indirect_link_branchpoint(dcontext, trace,
+            md->blk_info[md->num_blks-1].info.tag,
+            inst, ibp_is_return, -1);
     }
 
     DOLOG(2, LOG_MONITOR, {
@@ -1643,7 +1724,7 @@ end_and_emit_trace(dcontext_t *dcontext, fragment_t *cur_f)
         /* if both shared only remove if option on, and no custom tracing */
         IF_CUSTOM_TRACES(!dr_end_trace_hook_exists() &&)
         INTERNAL_OPTION(remove_shared_trace_heads)) {
-        fragment_remove_shared_no_flush(dcontext, trace_head_f);
+        fragment_remove_shared_no_flush(dcontext, trace_head_f, true);
         trace_head_f = NULL;
     }
 
@@ -1656,7 +1737,7 @@ end_and_emit_trace(dcontext_t *dcontext, fragment_t *cur_f)
             if (f != NULL) {
                 if (TEST(FRAG_SHARED, f->flags) && !TEST(FRAG_COARSE_GRAIN, f->flags)) {
                     /* FIXME: grab locks up front instead of on each delete */
-                    fragment_remove_shared_no_flush(dcontext, f);
+                    fragment_remove_shared_no_flush(dcontext, f, true);
                     trace_head_f = NULL; /* be safe */
                 } else
                     fragment_delete(dcontext, f, FRAGDEL_NO_OUTPUT | FRAGDEL_NO_MONITOR);
@@ -1706,6 +1787,8 @@ internal_extend_trace(dcontext_t *dcontext, fragment_t *f, linkstub_t *prev_l,
 {
     monitor_data_t *md = (monitor_data_t *) dcontext->monitor_field;
     bool have_locks = false;
+    bool ibp_is_return = (instrlist_last(&md->unmangled_ilist) != NULL &&
+                          instr_is_return(instrlist_last(&md->unmangled_ilist)));
     DEBUG_DECLARE(uint pre_emitted_size = md->emitted_size;)
 
 #ifdef CLIENT_INTERFACE
@@ -1759,7 +1842,7 @@ internal_extend_trace(dcontext_t *dcontext, fragment_t *f, linkstub_t *prev_l,
     md->trace_flags |= trace_flags_from_component_flags(f->flags);
 
     /* call routine in interp.c */
-    md->emitted_size += extend_trace(dcontext, f, prev_l);
+    md->emitted_size += extend_trace(dcontext, f, prev_l, ibp_is_return);
 
     LOG(THREAD, LOG_MONITOR, 3, "extending added %d to size of trace => %d total\n",
         md->emitted_size - pre_emitted_size, md->emitted_size);

@@ -137,9 +137,50 @@ typedef struct _local_state_t {
     spill_state_t spill_space;
 } local_state_t;
 
+#ifdef CROWD_SAFE
+typedef struct _shadow_stack_frame_t {
+    app_pc return_address;
+    app_pc base_pointer; // using %rsp b/c gcc doesn't always maintain %rbp
+} shadow_stack_frame_t;
+
+typedef struct _resolved_import_t {
+    char *name;
+    app_pc address;
+} resolved_import_t;
+
+// x64: 60 bytes: 1 cache line
+// x86: 40 bytes
+typedef struct _ibp_metadata_t {
+    uint64 hash_mask;
+    uint64 *lookuptable; 
+    uint flags;
+    app_pc ibp_from_tag;
+    app_pc ibp_to_tag;
+    app_pc syscall_from_tag;
+    app_pc xdx_temp_slot;
+    app_pc xsi_temp_slot;
+} ibp_metadata_t;
+
+// x64: 96 bytes: 2 cache lines
+// x86: 56 bytes: 1 cache line
+// cs-todo: consolidate `dst`, `pending_syscalls`, etc--avoid cluttering the cache line
+typedef struct _local_crowd_safe_data_t {
+    void *crowd_safe_thread_local;
+#ifdef CROWD_SAFE_DYNAMIC_IMPORTS    
+    resolved_import_t *resolved_imports;
+#endif
+    shadow_stack_frame_t *shadow_stack;
+    shadow_stack_frame_t *shadow_stack_miss_frame;
+    uint stack_spy_mark;
+    ibp_metadata_t ibp_data;
+} local_crowd_safe_data_t;
+#endif 
 typedef struct _local_state_extended_t {
     spill_state_t spill_space;
     table_stat_state_t table_space;
+#ifdef CROWD_SAFE
+    local_crowd_safe_data_t crowd_safe_data;
+#endif
 } local_state_extended_t;
 
 /* local_state_[extended_]t is allocated in os-specific thread-local storage (TLS),
@@ -159,6 +200,64 @@ typedef struct _local_state_extended_t {
 #define TLS_TABLE_SLOT(btype)    ((ushort)(TABLE_OFFSET                         \
                                   + offsetof(table_stat_state_t, table[btype])  \
                                   + offsetof(lookup_table_access_t, lookuptable)))
+#ifdef CROWD_SAFE                        
+#define CROWD_SAFE_DATA_OFFSET           (offsetof(local_state_extended_t, crowd_safe_data))
+#define TLS_DST_STACK                    ((ushort)(CROWD_SAFE_DATA_OFFSET                     \
+                                          + offsetof(local_crowd_safe_data_t, dst)))
+#define TLS_LINK_TRACKER                 ((ushort)(CROWD_SAFE_DATA_OFFSET                     \
+                                          + offsetof(local_crowd_safe_data_t, link_tracker)))
+#define TLS_PENDING_SYSCALL              ((ushort)(CROWD_SAFE_DATA_OFFSET                     \
+                                          + offsetof(local_crowd_safe_data_t, pending_syscall)))
+
+#ifdef CROWD_SAFE_DYNAMIC_IMPORTS                                          
+#define TLS_RESOLVED_IMPORTS             ((ushort)(CROWD_SAFE_DATA_OFFSET                     \
+                                          + offsetof(local_crowd_safe_data_t, resolved_imports)))
+#endif
+
+#define TLS_SHADOW_STACK_POINTER         ((ushort)(CROWD_SAFE_DATA_OFFSET                     \
+                                          + offsetof(local_crowd_safe_data_t, shadow_stack)))
+#define TLS_SS_MISS_FRAME                ((ushort)(CROWD_SAFE_DATA_OFFSET                     \
+                                          + offsetof(local_crowd_safe_data_t, shadow_stack_miss_frame)))
+#define TLS_STACK_SPY_MARK                ((ushort)(CROWD_SAFE_DATA_OFFSET                     \
+                                          + offsetof(local_crowd_safe_data_t, stack_spy_mark)))
+                                         
+#define TLS_IBP_DATA                     ((ushort)(CROWD_SAFE_DATA_OFFSET                     \
+                                          + offsetof(local_crowd_safe_data_t, ibp_data)))
+#define TLS_IBP_MASK_SLOT                ((ushort)(TLS_IBP_DATA                              \
+                                          + offsetof(ibp_metadata_t, hash_mask)))
+#define TLS_IBP_SLOT                     ((ushort)(TLS_IBP_DATA                              \
+                                          + offsetof(ibp_metadata_t, lookuptable)))
+#define TLS_IBP_FLAGS                    ((ushort)(TLS_IBP_DATA                              \
+                                          + offsetof(ibp_metadata_t, flags)))
+#define TLS_IBP_FROM_TAG                 ((ushort)(TLS_IBP_DATA                              \
+                                          + offsetof(ibp_metadata_t, ibp_from_tag)))
+#define TLS_IBP_TO_TAG                   ((ushort)(TLS_IBP_DATA                              \
+                                          + offsetof(ibp_metadata_t, ibp_to_tag)))
+#define TLS_SYSCALL_FROM_TAG             ((ushort)(TLS_IBP_DATA                              \
+                                          + offsetof(ibp_metadata_t, syscall_from_tag)))
+#ifdef X64                               
+# define TLS_IBP_FROM_TAG_HIGH            ((ushort)(TLS_IBP_DATA                              \
+                                          + offsetof(ibp_metadata_t, ibp_from_tag) + 4))
+#define TLS_IBP_TO_TAG_HIGH              ((ushort)(TLS_IBP_DATA                              \
+                                          + offsetof(ibp_metadata_t, ibp_to_tag) + 4))
+#define TLS_SYSCALL_FROM_TAG_HIGH         ((ushort)(TLS_IBP_DATA                              \
+                                          + offsetof(ibp_metadata_t, syscall_from_tag) + 4))
+#endif                                   
+#define TLS_XDX_TEMP                     ((ushort)(TLS_IBP_DATA                              \
+                                          + offsetof(ibp_metadata_t, xdx_temp_slot)))
+#define TLS_XSI_TEMP                     ((ushort)(TLS_IBP_DATA                              \
+                                          + offsetof(ibp_metadata_t, xsi_temp_slot)))
+#endif 
+
+/*
+#define TLS_IBP_MASK_SLOT        (ushort)0
+#define TLS_IBP_MASK_SLOT        (ushort)0
+#define TLS_IBP_SLOT             (ushort)0
+#define TLS_IBP_FROM_TAG         (ushort)0
+#define TLS_IBP_TO_TAG           (ushort)0
+#define TLS_IBP_IS_NEW           (ushort)0
+#define TLS_XDX_TEMP             (ushort)0
+*/
   
 #ifdef HASHTABLE_STATISTICS
 # define TLS_HTABLE_STATS_SLOT   ((ushort)(offsetof(local_state_extended_t,     \
@@ -726,6 +825,9 @@ cache_pc get_do_clone_syscall_entry(dcontext_t *dcontext);
 # ifdef VMX86_SERVER
 cache_pc get_do_vmkuw_syscall_entry(dcontext_t *dcontext);
 # endif
+#endif
+#ifdef CROWD_SAFE_INTEGRATION
+cache_pc get_do_throw_exception_entry(dcontext_t *dcontext);
 #endif
 byte * get_global_do_syscall_entry(void);
 
@@ -1300,7 +1402,7 @@ is_jmp_rel8(byte *code_buf, app_pc app_loc, app_pc *jmp_target /* OUT */);
  *    (36-19)=17 vs (206-120)=86 => 69 bytes.  was 65 bytes prior to PR 209709!
  *    usually 3 bytes smaller since don't need to restore eflags.
  */
-#define TRACE_CTI_MANGLE_SIZE_UPPER_BOUND 72
+#define TRACE_CTI_MANGLE_SIZE_UPPER_BOUND 80
 
 fragment_t *
 build_basic_block_fragment(dcontext_t *dcontext, app_pc start_pc,
@@ -1309,7 +1411,8 @@ build_basic_block_fragment(dcontext_t *dcontext, app_pc start_pc,
                            _IF_CLIENT(instrlist_t **unmangled_ilist));
 
 void interp(dcontext_t *dcontext);
-uint extend_trace(dcontext_t *dcontext, fragment_t *f, linkstub_t *prev_l);
+uint extend_trace(dcontext_t *dcontext, fragment_t *f, linkstub_t *prev_l,
+                  bool ibp_is_trace);
 int append_trace_speculate_last_ibl(dcontext_t *dcontext, instrlist_t *trace,
                                     app_pc speculate_next_tag, bool record_translation);
 

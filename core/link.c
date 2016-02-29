@@ -49,6 +49,12 @@
 #include "perscache.h"
 #include "instr.h" /* PC_RELATIVE_TARGET */
 
+#ifdef CROWD_SAFE_INTEGRATION
+#include "../ext/link-observer/link_observer.h"
+#include "../ext/link-observer/crowd_safe_trace.h"
+#include "../ext/link-observer/crowd_safe_util.h"
+#endif
+
 /* fragment_t and future_fragment_t are guaranteed to have flags field at same offset,
  * so we use it to find incoming_stubs offset
  */
@@ -1781,6 +1787,10 @@ link_fragment_incoming(dcontext_t *dcontext, fragment_t *f, bool new_fragment)
         }
         /* only direct branches are marked on targets' incoming */
         ASSERT(LINKSTUB_DIRECT(l->flags));
+#ifdef CROWD_SAFE_INTEGRATION
+        if (!(IS_SPECIAL_LINKSTUB(l) || TEST(FRAG_TEMP_PRIVATE, f->flags) || TEST(FRAG_IS_TRACE, in_f->flags)))
+            notify_incoming_link(dcontext, in_f->tag, f->tag);
+#endif
         if (is_linkable(dcontext, in_f, l, f,
                         NEED_SHARED_LOCK(f->flags) ||
                         (new_fragment && SHARED_FRAGMENTS_ENABLED()),
@@ -1809,6 +1819,7 @@ void
 link_fragment_outgoing(dcontext_t *dcontext, fragment_t *f, bool new_fragment)
 {
     linkstub_t *l;
+    byte exit_ordinal = 0;
     LOG(THREAD, LOG_LINKS, 4, "  linking outgoing links for F%d("PFX")\n",
         f->id, f->tag);
     /* ensure some higher-level lock is held if f is shared
@@ -1865,6 +1876,10 @@ link_fragment_outgoing(dcontext_t *dcontext, fragment_t *f, bool new_fragment)
                     f->id, f->tag, EXIT_CTI_PC(f, l),
                     target_tag);
             }
+#ifdef CROWD_SAFE_INTEGRATION
+            if (!(IS_SPECIAL_LINKSTUB(l) || TEST(FRAG_IS_TRACE, f->flags)))
+                notify_linking_fragments(dcontext, f, target_tag, exit_ordinal++);
+#endif
         } else {
             ASSERT(LINKSTUB_INDIRECT(l->flags));
             /* indirect branches: just let link_branch handle the
@@ -1875,6 +1890,9 @@ link_fragment_outgoing(dcontext_t *dcontext, fragment_t *f, bool new_fragment)
             if ((f->flags & FRAG_DYNGEN) == 0)
 #endif
                 link_branch(dcontext, f, l, NULL, HOT_PATCHABLE);
+#ifdef CROWD_SAFE_INTEGRATION
+            exit_ordinal++;
+#endif
         }
     }
 

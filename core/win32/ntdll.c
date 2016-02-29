@@ -76,6 +76,10 @@
 
 #include <wchar.h> /* _snwprintf */
 
+#ifdef CROWD_SAFE_INTEGRATION
+# include "../../ext/link-observer/crowd_safe_util.h"
+#endif
+
 /* WARNING: these routines use the Native API, an undocumented API
  * exported by ntdll.dll.
  * It could change without warning with a new version of Windows.
@@ -2170,6 +2174,9 @@ void
 nt_continue(CONTEXT *cxt)
 {
     GET_RAW_SYSCALL(Continue, IN PCONTEXT Context, IN BOOLEAN TestAlert);
+#if defined(CROWD_SAFE_INTEGRATION) && defined(MONITOR_UNEXPECTED_IBP)
+    start_fcache_clock(get_thread_private_dcontext(), true);
+#endif
     NT_SYSCALL(Continue, cxt, 0/* don't change APC status */);
     /* should not get here */
     ASSERT_NOT_REACHED();

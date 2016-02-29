@@ -159,7 +159,6 @@ is_readable_without_exception(const byte *pc, size_t size)
  * readability of any RVAs it contains (for that use get_module_exports_directory_check
  * or verify in the caller at usage). Xref case 9717.
  */
-static
 IMAGE_EXPORT_DIRECTORY*
 get_module_exports_directory_common(app_pc base_addr,
                                     size_t *exports_size /* OPTIONAL OUT */

@@ -70,6 +70,15 @@
 #include <string.h> /* for memcpy */
 #include <windows.h>
 
+#ifdef CROWD_SAFE_INTEGRATION
+# include "../../ext/link-observer/link_observer.h"
+# include "../../ext/link-observer/module_observer.h"
+# include "../../ext/link-observer/indirect_link_observer.h"
+# include "../../ext/link-observer/basic_block_hashtable.h"
+# include "../../ext/link-observer/crowd_safe_util.h"
+# include "../../ext/link-observer/crowd_safe_trace.h"
+#endif
+
 /* forward declarations */
 static dcontext_t * callback_setup(app_pc next_pc);
 static byte * insert_image_entry_trampoline(dcontext_t *dcontext);
@@ -1742,6 +1751,10 @@ intercept_call(byte *our_pc, byte *tgt_pc, intercept_function_t prof_func,
         }
     }
 
+#ifdef CROWD_SAFE_INTEGRATION
+    notify_dynamorio_interception(tgt_pc, tgt_pc + size);
+#endif
+
     /* Must return to the displaced app code in the landing pad */
     pc = emit_resume_jmp(pc, displaced_app_pc, tgt_pc, pc);
     our_pc_end = pc;
@@ -2214,6 +2227,9 @@ syscall_wrapper_ilist(dcontext_t *dcontext,
             /* skip original instruction */
             instr_destroy(dcontext, instr);
 #endif
+        } else if (DYNAMO_OPTION(native_exec_hook_conflict) == HOOKED_TRAMPOLINE_OMIT) {
+            instrlist_append(ilist, instr);
+            return NULL;
         } else {
             ASSERT_NOT_REACHED();
             FATAL_USAGE_ERROR(TAMPERED_NTDLL, 2, get_application_name(),
@@ -2473,6 +2489,8 @@ intercept_syscall_wrapper(byte **ptgt_pc /* IN/OUT */,
 
     after_hook_target = syscall_wrapper_ilist(dcontext, &ilist, ptgt_pc, callee_arg,
                                               fpo_stack_adjustment, &ret_pc);
+    if (after_hook_target == NULL)
+        return NULL;
 
     tgt_pc = *ptgt_pc;
     pc = tgt_pc;
@@ -2480,6 +2498,8 @@ intercept_syscall_wrapper(byte **ptgt_pc /* IN/OUT */,
     DOLOG(3, LOG_ASYNCH, { disassemble_with_bytes(dcontext, pc, main_logfile); });
 
     pc = interception_cur_pc; /* current spot in interception buffer */
+
+    CS_LOG("syscall intercept at "PX"\n", pc);
 
     /* copy original 5 bytes to ease unhooking, we won't execute this */
     *orig_bytes_pc = pc;
@@ -3486,9 +3506,14 @@ intercept_apc(app_state_at_intercept_t *state)
                 "\tAPC return point "PFX" needs no translation\n", cxt->CXT_XIP);
             /* our internal nudge creates a thread that directly targets
              * generic_nudge_target() */
+#ifdef CLIENT_SIDELINE
             ASSERT(!is_dynamo_address((app_pc)cxt->CXT_XIP) || 
                    cxt->CXT_XIP == (ptr_uint_t)generic_nudge_target
                    IF_CLIENT_INTERFACE(|| cxt->CXT_XIP==(ptr_uint_t)client_thread_target));
+#else
+            ASSERT(!is_dynamo_address((app_pc)cxt->CXT_XIP) ||
+                   cxt->CXT_XIP == (ptr_uint_t)generic_nudge_target);
+#endif
         }
 
         asynch_retakeover_if_native();
@@ -3987,8 +4012,21 @@ found_modified_code(dcontext_t *dcontext, EXCEPTION_RECORD *pExcptRec,
             }
         }
     } else {
-        next_pc = handle_modified_code(dcontext, instr_cache_pc, 
-                                       translated_pc, target, f);
+        bool skip = false;
+        uint write_size;
+        decode_memory_reference_size(dcontext, translated_pc, &write_size);
+
+        if (!skip) {
+            next_pc = handle_modified_code(dcontext, instr_cache_pc, translated_pc, target, f);
+#ifdef CROWD_SAFE_INTEGRATION
+            if (next_pc != NULL) {
+                CS_DET("Code modification trap: code at "PX" written by "PX". Resuming at "PX" on thread 0x%x\n",
+                    target, f->tag, next_pc, current_thread_id());
+
+                notify_code_modification(dcontext, f, next_pc, target, write_size);
+            }
+#endif
+        }
     }
     /* if !takeover, re-execute the write no matter what -- the assumption
      * is that the write is native */
@@ -4950,6 +4988,11 @@ intercept_exception(app_state_at_intercept_t *state)
      * FIXME: is_thread_known() may be unnecessary */
     dcontext_t *dcontext = get_thread_private_dcontext();
 
+#ifdef MONITOR_UNEXPECTED_IBP
+    if (dcontext != NULL)
+        stop_fcache_clock(dcontext);
+#endif
+
     if (dynamo_exited && get_num_threads() > 1) {
         /* PR 470957: this is almost certainly a race so just squelch it.
          * We live w/ the risk that it was holding a lock our release-build
@@ -5199,6 +5242,9 @@ intercept_exception(app_state_at_intercept_t *state)
             /* now handle the fault just like RaiseException */
             DODEBUG({ known_source = true; });
         }
+
+        CS_DET("Handling app exception at "PX" on thread 0x%x\n",
+               pExcptRec->ExceptionAddress, current_thread_id());
 
         check_internal_exception(dcontext, cxt, pExcptRec, forged_exception_addr
                                  _IF_CLIENT(&raw_mcontext));
@@ -5546,8 +5592,10 @@ intercept_exception(app_state_at_intercept_t *state)
          */
         state->callee_arg = (void *) false /* use cur dcontext */;
         asynch_take_over(state);
-    } else
+    } else {
+        CS_DET("Ignoring app exception\n");
         STATS_INC(num_exceptions_noasynch);
+    }
     return AFTER_INTERCEPT_LET_GO;
 }
 
@@ -6017,6 +6065,10 @@ callback_setup(app_pc next_pc)
     old_dcontext = get_thread_private_dcontext();
     ASSERT(old_dcontext);
 
+#ifdef CROWD_SAFE_INTEGRATION
+    crowd_safe_heartbeat(old_dcontext);
+#endif
+
     if (!old_dcontext->initialized) {
         /* new threads are created via APC, so they come in here
          * uninitialized -- we could not create new dcontext and use old
@@ -6112,6 +6164,10 @@ callback_setup(app_pc next_pc)
     /* saved and current dcontext should both be valid */
     new_dcontext->valid = true;
     old_dcontext->valid = true;
+
+#ifdef CROWD_SAFE_INTEGRATION
+    push_nested_shadow_stack(old_dcontext);
+#endif
 
     /* now prepare to use new dcontext, pointed to by old_dcontext ptr */
     initialize_dynamo_context(old_dcontext);
@@ -6285,6 +6341,10 @@ callback_start_return(priv_mcontext_t *mc)
     swap_dcontexts(prev_dcontext, cur_dcontext);
     /* invalidate prev */
     prev_dcontext->valid = false;
+
+#ifdef CROWD_SAFE_INTEGRATION
+    pop_nested_shadow_stack(cur_dcontext);
+#endif
 
     DOLOG(5, LOG_ASYNCH, {
         LOG(cur_dcontext->logfile, LOG_ASYNCH, 4,
@@ -6907,6 +6967,9 @@ intercept_image_entry(app_state_at_intercept_t *state)
                  * the new bb we'll build won't be executed ever
                  * again.
                  */
+
+                CS_LOG("Flush: intercept_image_entry()\n");
+
                 /* note we only flush, but not remove region, since we will not rewalk */
                 flush_fragments_in_region_start(existing_dcontext,
                                                 image_entry_pc, 1,

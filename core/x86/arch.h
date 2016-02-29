@@ -646,6 +646,9 @@ typedef struct _generated_code_t {
     uint do_vmkuw_syscall_offs; /* offs of pc after actual syscall instr */
 # endif
 #endif
+#ifdef CROWD_SAFE_INTEGRATION
+    byte *do_throw_exception;
+#endif
 #ifdef UNIX
     /* PR 212290: can't be static code in x86.asm since it can't be PIC */
     byte *new_thread_dynamo_start;
@@ -828,8 +831,8 @@ byte * emit_indirect_branch_lookup(dcontext_t *dcontext, generated_code_t *code,
                                    ibl_code_t *ibl_code);
 void update_indirect_branch_lookup(dcontext_t *dcontext);
 
-byte *emit_far_ibl(dcontext_t *dcontext, byte *pc, ibl_code_t *ibl_code, cache_pc ibl_tgt
-                   _IF_X64(far_ref_t *far_jmp_opnd));
+byte *emit_far_ibl(dcontext_t *dcontext, byte *pc, ibl_code_t *ibl_code, cache_pc ibl_tgt,
+                   bool is_gencode_ibl_lookup _IF_X64(far_ref_t *far_jmp_opnd));
 
 #ifndef WINDOWS
 void update_syscalls(dcontext_t *dcontext);
@@ -891,6 +894,11 @@ byte * emit_do_vmkuw_syscall(dcontext_t *dcontext, generated_code_t *code, byte 
                              byte *fcache_return_pc, bool thread_shared,
                              uint *syscall_offs /*OUT*/);
 # endif
+#endif
+
+#ifdef CROWD_SAFE_INTEGRATION
+byte * 
+emit_do_throw_exception(dcontext_t *dcontext, generated_code_t *code, byte *pc);
 #endif
 
 #ifdef UNIX

@@ -629,7 +629,7 @@ void
 fragment_record_translation_info(dcontext_t *dcontext, fragment_t *f, instrlist_t *ilist);
 
 void
-fragment_remove_shared_no_flush(dcontext_t *dcontext, fragment_t *f);
+fragment_remove_shared_no_flush(dcontext_t *dcontext, fragment_t *f, bool is_live_trace_component);
 
 void
 fragment_unlink_for_deletion(dcontext_t *dcontext, fragment_t *f);
@@ -647,7 +647,7 @@ fragment_remove_all_ibl_in_region(dcontext_t *dcontext, app_pc start, app_pc end
 /* Removes f from any hashtables -- BB, trace, future -- and IBT tables
  * it is in */
 void
-fragment_remove(dcontext_t *dcontext, fragment_t *f);
+fragment_remove(dcontext_t *dcontext, fragment_t *f, bool is_live_trace_component);
 
 void
 fragment_replace(dcontext_t *dcontext, fragment_t *f, fragment_t *new_f);

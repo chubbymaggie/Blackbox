@@ -63,6 +63,10 @@
 # include "../unix/module.h" /* redirect_* functions */
 #endif
 
+#ifdef CROWD_SAFE_INTEGRATION
+#include "../../ext/link-observer/link_observer.h"
+#endif
+
 #ifdef CLIENT_INTERFACE
 /* in utils.c, not exported to everyone */
 extern void do_file_write(file_t f, const char *fmt, va_list ap);
@@ -669,7 +673,7 @@ instrument_exit(void)
     /* Note - currently own initexit lock when this is called (see PR 227619). */
 
     /* support dr_get_mcontext() from the exit event */
-    if (!standalone_library)
+    if (!standalone_library && get_thread_private_dcontext()->client_data != NULL)
         get_thread_private_dcontext()->client_data->mcontext_in_dcontext = true;
     call_all(exit_callbacks, int (*)(),
              /* It seems the compiler is confused if we pass no var args
@@ -1176,11 +1180,15 @@ instrument_thread_init(dcontext_t *dcontext, bool client_thread, bool valid_mc)
 #endif
 
     /* i#117/PR 395156: support dr_get_mcontext() from the thread init event */
+#ifndef CROWD_SAFE_INTEGRATION
     if (valid_mc)
         dcontext->client_data->mcontext_in_dcontext = true;
+#endif
     call_all(thread_init_callbacks, int (*)(void *), (void *)dcontext);
+#ifndef CROWD_SAFE_INTEGRATION
     if (valid_mc)
         dcontext->client_data->mcontext_in_dcontext = false;
+#endif
 #if defined(CLIENT_INTERFACE) && defined(WINDOWS)
     if (swap_peb)
         swap_peb_pointer(dcontext, false/*to app*/);
@@ -1213,7 +1221,9 @@ instrument_thread_exit_event(dcontext_t *dcontext)
     }
 #endif
     /* support dr_get_mcontext() from the exit event */
+#ifndef CROWD_SAFE_INTEGRATION
     dcontext->client_data->mcontext_in_dcontext = true;
+#endif
     /* Note - currently own initexit lock when this is called (see PR 227619). */
     call_all(thread_exit_callbacks, int (*)(void *), (void *)dcontext);
 }
@@ -1231,6 +1241,10 @@ instrument_thread_exit(dcontext_t *dcontext)
 
 # ifdef CLIENT_SIDELINE
     DELETE_LOCK(dcontext->client_data->sideline_mutex);
+# endif
+
+# ifdef CROWD_SAFE_INTEGRATION
+    return;
 # endif
 
     /* could be heap space allocated for the todo list */
@@ -1262,7 +1276,11 @@ instrument_thread_exit(dcontext_t *dcontext)
 bool
 dr_bb_hook_exists(void)
 {
+#ifdef CROWD_SAFE_INTEGRATION
+    return true;
+#else
     return (bb_callbacks.num > 0);
+#endif
 }
 
 bool
@@ -1414,8 +1432,10 @@ instrument_basic_block(dcontext_t *dcontext, app_pc tag, instrlist_t *bb,
 #endif
 
     /* i#117/PR 395156: allow dr_[gs]et_mcontext where accurate */
+#ifndef CROWD_SAFE_INTEGRATION
     if (!translating && !for_trace)
         dcontext->client_data->mcontext_in_dcontext = true;
+#endif
 
     /* Note - currently we are couldbelinking and hold the
      * bb_building lock when this is called (see PR 227619).
@@ -1428,7 +1448,9 @@ instrument_basic_block(dcontext_t *dcontext, app_pc tag, instrlist_t *bb,
         *emitflags = ret;
     DOCHECK(1, { check_ilist_translations(bb); });
 
+#ifndef CROWD_SAFE_INTEGRATION
     dcontext->client_data->mcontext_in_dcontext = false;
+#endif
 
     if (IF_DEBUG_ELSE(for_trace, false)) {
         CLIENT_ASSERT(instrlist_get_return_target(bb) == NULL &&
@@ -1457,6 +1479,11 @@ instrument_trace(dcontext_t *dcontext, app_pc tag, instrlist_t *trace,
 #ifdef UNSUPPORTED_API
     instr_t *instr;
 #endif
+
+#ifdef CROWD_SAFE_INTEGRATION
+    notify_trace_constructed(dcontext, trace);
+#endif
+
     if (trace_callbacks.num == 0)
         return DR_EMIT_DEFAULT;
 
@@ -1487,8 +1514,10 @@ instrument_trace(dcontext_t *dcontext, app_pc tag, instrlist_t *trace,
 #endif
 
     /* i#117/PR 395156: allow dr_[gs]et_mcontext where accurate */
+#ifndef CROWD_SAFE_INTEGRATION
     if (!translating)
         dcontext->client_data->mcontext_in_dcontext = true;
+#endif
 
     /* We or together the return values */
     call_all_ret(ret, |=, , trace_callbacks,
@@ -1502,7 +1531,9 @@ instrument_trace(dcontext_t *dcontext, app_pc tag, instrlist_t *trace,
                   "instrlist_set_return/fall_through_target"
                   " cannot be used on traces");
 
+#ifndef CROWD_SAFE_INTEGRATION
     dcontext->client_data->mcontext_in_dcontext = false;
+#endif
 
 #ifdef DEBUG
     LOG(THREAD, LOG_INTERP, 3, "\nafter instrumentation:\n");
@@ -1736,7 +1767,10 @@ instrument_module_load_trigger(app_pc modbase)
      * in consistent state in case client acts on it, even though
      * we have to re-look-up the data here.
      */
-    if (!IS_STRING_OPTION_EMPTY(client_lib)) {
+
+#ifndef CROWD_SAFE_INTEGRATION
+     if (!IS_STRING_OPTION_EMPTY(client_lib)) {
+#endif
         module_area_t *ma;
         module_data_t *client_data = NULL;
         os_get_module_info_lock();
@@ -1749,7 +1783,9 @@ instrument_module_load_trigger(app_pc modbase)
             dr_free_module_data(client_data);
         } else
             os_get_module_info_unlock();
+#ifndef CROWD_SAFE_INTEGRATION
     }
+#endif
 }
 
 /* Notify user when a module is loaded */
@@ -1767,12 +1803,16 @@ instrument_module_load(module_data_t *data, bool previously_loaded)
     dcontext = get_thread_private_dcontext();
 
     /* client shouldn't delete this */
+#ifndef CROWD_SAFE_INTEGRATION
     dcontext->client_data->no_delete_mod_data = data;
+#endif
 
     call_all(module_load_callbacks, int (*)(void *, module_data_t *, bool),
              (void *)dcontext, data, previously_loaded);
 
+#ifndef CROWD_SAFE_INTEGRATION
     dcontext->client_data->no_delete_mod_data = NULL;
+#endif
 }    
 
 /* Notify user when a module is unloaded */
@@ -1786,18 +1826,25 @@ instrument_module_unload(module_data_t *data)
 
     dcontext = get_thread_private_dcontext();
     /* client shouldn't delete this */
+#ifndef CROWD_SAFE_INTEGRATION
     dcontext->client_data->no_delete_mod_data = data;
+#endif
 
     call_all(module_unload_callbacks, int (*)(void *, module_data_t *),
              (void *)dcontext, data);
 
+#ifndef CROWD_SAFE_INTEGRATION
     dcontext->client_data->no_delete_mod_data = NULL;
+#endif
 }
 
 /* returns whether this sysnum should be intercepted */
 bool
 instrument_filter_syscall(dcontext_t *dcontext, int sysnum)
 {
+#ifdef CROWD_SAFE_INTEGRATION
+    return is_stack_spy_sysnum(sysnum);
+#else
     bool ret = false;
     /* if client does not filter then we don't intercept anything */
     if (filter_syscall_callbacks.num == 0)
@@ -1806,6 +1853,7 @@ instrument_filter_syscall(dcontext_t *dcontext, int sysnum)
     call_all_ret(ret, =, || ret, filter_syscall_callbacks, bool (*)(void *, int),
                  (void *)dcontext, sysnum);
     return ret;
+#endif
 }
 
 /* returns whether this syscall should execute */
@@ -1813,9 +1861,18 @@ bool
 instrument_pre_syscall(dcontext_t *dcontext, int sysnum)
 {
     bool exec = true;
+#ifdef CROWD_SAFE_INTEGRATION
+    notify_traversing_syscall(dcontext, dcontext->last_fragment->tag, sysnum);
+#endif
+
+#ifndef CROWD_SAFE_INTEGRATION
     dcontext->client_data->in_pre_syscall = true;
+#endif
+
     /* clear flag from dr_syscall_invoke_another() */
+#ifndef CROWD_SAFE_INTEGRATION
     dcontext->client_data->invoke_another_syscall = false;
+#endif
     if (pre_syscall_callbacks.num > 0) {
         /* Skip syscall if any client wants to skip it, but don't short-circuit,
          * as skipping syscalls is usually done when the effect of the syscall
@@ -1826,7 +1883,9 @@ instrument_pre_syscall(dcontext_t *dcontext, int sysnum)
         call_all_ret(exec, =, && exec, pre_syscall_callbacks,
                      bool (*)(void *, int), (void *)dcontext, sysnum);
     }
+#ifndef CROWD_SAFE_INTEGRATION
     dcontext->client_data->in_pre_syscall = false;
+#endif
     return exec;
 }
 
@@ -1835,16 +1894,24 @@ instrument_post_syscall(dcontext_t *dcontext, int sysnum)
 {
     if (post_syscall_callbacks.num == 0)
         return;
+#ifndef CROWD_SAFE_INTEGRATION
     dcontext->client_data->in_post_syscall = true;
+#endif
     call_all(post_syscall_callbacks, int (*)(void *, int),
              (void *)dcontext, sysnum);
+#ifndef CROWD_SAFE_INTEGRATION
     dcontext->client_data->in_post_syscall = false;
+#endif
 }
 
 bool
 instrument_invoke_another_syscall(dcontext_t *dcontext)
 {
+#ifdef CROWD_SAFE_INTEGRATION
+	return false;
+#else
     return dcontext->client_data->invoke_another_syscall;
+#endif
 }
 
 #ifdef WINDOWS
@@ -2060,16 +2127,20 @@ instrument_nudge(dcontext_t *dcontext, client_id_t id, uint64 arg)
      * to have synchall checks do extra checks and have IS_CLIENT_THREAD be
      * false for nudge threads at exit time?
      */
+# ifndef CROWD_SAFE_INTEGRATION
     dcontext->client_data->is_client_thread = true;
     dcontext->thread_record->under_dynamo_control = false;
+# endif
 #else
     /* support calling dr_get_mcontext() on this thread.  the app
      * context should be intact in the current mcontext except
      * xip which we set from next_tag.
      */
+#ifndef CROWD_SAFE_INTEGRATION
     CLIENT_ASSERT(!dcontext->client_data->mcontext_in_dcontext,
                   "internal inconsistency in where mcontext is");
     dcontext->client_data->mcontext_in_dcontext = true;
+#endif
     /* officially get_mcontext() doesn't always set xip: we do anyway */
     get_mcontext(dcontext)->xip = dcontext->next_tag;
 #endif
@@ -2078,10 +2149,14 @@ instrument_nudge(dcontext_t *dcontext, client_id_t id, uint64 arg)
              (void *)dcontext, arg);
 
 #ifdef UNIX
+# ifndef CROWD_SAFE_INTEGRATION
     dcontext->client_data->mcontext_in_dcontext = false;
+# endif
 #else
+# ifndef CROWD_SAFE_INTEGRATION
     dcontext->thread_record->under_dynamo_control = true;
     dcontext->client_data->is_client_thread = false;
+# endif
 
     ATOMIC_DEC(int, num_client_nudge_threads);
 #endif
@@ -3103,6 +3178,7 @@ dr_mutex_lock(void *mutex)
     dcontext_t *dcontext = get_thread_private_dcontext();
     /* set client_grab_mutex so that we know to set client_thread_safe_for_synch
      * around the actual wait for the lock */
+#ifndef CROWD_SAFE_INTEGRATION
     if (IS_CLIENT_THREAD(dcontext)) {
         dcontext->client_data->client_grab_mutex = mutex;
         /* We do this on the outside so that we're conservative wrt races
@@ -3110,9 +3186,12 @@ dr_mutex_lock(void *mutex)
          */
         dcontext->client_data->mutex_count++;
     }
+#endif
     mutex_lock((mutex_t *) mutex);
+#ifndef CROWD_SAFE_INTEGRATION
     if (IS_CLIENT_THREAD(dcontext))
         dcontext->client_data->client_grab_mutex = NULL;
+#endif
 }
 
 DR_API 
@@ -3126,11 +3205,13 @@ dr_mutex_unlock(void *mutex)
     /* We do this on the outside so that we're conservative wrt races
      * in the direction of not killing the thread while it has a lock
      */
+#ifndef CROWD_SAFE_INTEGRATION
     if (IS_CLIENT_THREAD(dcontext)) {
         CLIENT_ASSERT(dcontext->client_data->mutex_count > 0,
                       "internal client mutex nesting error");
         dcontext->client_data->mutex_count--;
     }
+#endif
 }
 
 DR_API 
@@ -3143,6 +3224,7 @@ dr_mutex_trylock(void *mutex)
     dcontext_t *dcontext = get_thread_private_dcontext();
     /* set client_grab_mutex so that we know to set client_thread_safe_for_synch
      * around the actual wait for the lock */
+#ifndef CROWD_SAFE_INTEGRATION
     if (IS_CLIENT_THREAD(dcontext)) {
         dcontext->client_data->client_grab_mutex = mutex;
         /* We do this on the outside so that we're conservative wrt races
@@ -3150,12 +3232,15 @@ dr_mutex_trylock(void *mutex)
          */
         dcontext->client_data->mutex_count++;
     }
+#endif
     success = mutex_trylock((mutex_t *) mutex);
+#ifndef CROWD_SAFE_INTEGRATION
     if (IS_CLIENT_THREAD(dcontext)) {
         if (!success)
             dcontext->client_data->mutex_count--;
         dcontext->client_data->client_grab_mutex = NULL;
     }
+#endif
     return success;
 }
 
@@ -3512,9 +3597,11 @@ dr_module_set_should_instrument(module_handle_t handle, bool should_instrument)
         /* This kind of obviates the need for handle, but it makes the API more
          * explicit.
          */
+#ifndef CROWD_SAFE_INTEGRATION
         CLIENT_ASSERT(dcontext->client_data->no_delete_mod_data->handle == handle,
                       "Do not call dr_module_set_should_instrument() outside "
                       "of the module's own load event");
+#endif
         ASSERT(!executable_vm_area_executed_from(ma->start, ma->end));
         if (should_instrument) {
             ma->flags &= ~MODULE_NULL_INSTRUMENT;
@@ -3932,11 +4019,15 @@ dr_messagebox(const char *fmt, ...)
     NULL_TERMINATE_BUFFER(msg);
     snwprintf(wmsg, BUFFER_SIZE_ELEMENTS(wmsg), L"%S", msg);
     NULL_TERMINATE_BUFFER(wmsg);
+#ifndef CROWD_SAFE_INTEGRATION
     if (IS_CLIENT_THREAD(dcontext))
         dcontext->client_data->client_thread_safe_for_synch = true;
+#endif
     nt_messagebox(wmsg, L"Notice");
+#ifndef CROWD_SAFE_INTEGRATION
     if (IS_CLIENT_THREAD(dcontext))
         dcontext->client_data->client_thread_safe_for_synch = false;
+#endif
     va_end(ap);
 }
 
@@ -4182,21 +4273,27 @@ dr_get_dr_thread_handle(void *drcontext)
 DR_API void *
 dr_get_tls_field(void *drcontext)
 {
+#ifdef CROWD_SAFE_INTEGRATION
+	return NULL;
+#else
     dcontext_t *dcontext = (dcontext_t *) drcontext;
     CLIENT_ASSERT(drcontext != NULL, "dr_get_tls_field: drcontext cannot be NULL");
     CLIENT_ASSERT(drcontext != GLOBAL_DCONTEXT,
                   "dr_get_tls_field: drcontext is invalid");
     return dcontext->client_data->user_field;
+#endif
 }
 
 DR_API void 
 dr_set_tls_field(void *drcontext, void *value)
 {
+#ifndef CROWD_SAFE_INTEGRATION
     dcontext_t *dcontext = (dcontext_t *) drcontext;
     CLIENT_ASSERT(drcontext != NULL, "dr_set_tls_field: drcontext cannot be NULL");
     CLIENT_ASSERT(drcontext != GLOBAL_DCONTEXT,
                   "dr_set_tls_field: drcontext is invalid");
     dcontext->client_data->user_field = value;
+#endif
 }
 
 DR_API void *
@@ -4234,11 +4331,15 @@ dr_thread_yield(void)
 {
     dcontext_t *dcontext = get_thread_private_dcontext();
     CLIENT_ASSERT(!standalone_library, "API not supported in standalone mode");
+#ifndef CROWD_SAFE_INTEGRATION
     if (IS_CLIENT_THREAD(dcontext))
         dcontext->client_data->client_thread_safe_for_synch = true;
+#endif
     os_thread_yield();
+#ifndef CROWD_SAFE_INTEGRATION
     if (IS_CLIENT_THREAD(dcontext))
         dcontext->client_data->client_thread_safe_for_synch = false;
+#endif
 }
 
 DR_API
@@ -4248,11 +4349,15 @@ dr_sleep(int time_ms)
 {
     dcontext_t *dcontext = get_thread_private_dcontext();
     CLIENT_ASSERT(!standalone_library, "API not supported in standalone mode");
+#ifndef CROWD_SAFE_INTEGRATION
     if (IS_CLIENT_THREAD(dcontext))
         dcontext->client_data->client_thread_safe_for_synch = true;
+#endif
     os_thread_sleep(time_ms);
+#ifndef CROWD_SAFE_INTEGRATION
     if (IS_CLIENT_THREAD(dcontext))
         dcontext->client_data->client_thread_safe_for_synch = false;
+#endif
 }
 
 #ifdef CLIENT_SIDELINE
@@ -4265,7 +4370,9 @@ dr_client_thread_set_suspendable(bool suspendable)
     CLIENT_ASSERT(!standalone_library, "API not supported in standalone mode");
     if (!IS_CLIENT_THREAD(dcontext))
         return false;
+#ifndef CROWD_SAFE_INTEGRATION
     dcontext->client_data->suspendable = suspendable;
+#endif
     return true;
 }
 #endif
@@ -4334,11 +4441,15 @@ dr_suspend_all_other_threads_ex(OUT void ***drcontexts,
                      */
                     (*drcontexts)[out_suspended] = (void *) dcontext;
                     out_suspended++;
+#ifndef CROWD_SAFE_INTEGRATION
                     CLIENT_ASSERT(!dcontext->client_data->mcontext_in_dcontext,
                                   "internal inconsistency in where mcontext is");
+#endif
                     /* officially get_mcontext() doesn't always set xip: we do anyway */
                     get_mcontext(dcontext)->xip = dcontext->next_tag;
+#ifndef CROWD_SAFE_INTEGRATION
                     dcontext->client_data->mcontext_in_dcontext = true;
+#endif
                 } else {
                     (*drcontexts)[out_suspended] = (void *) dcontext;
                     out_suspended++;
@@ -4350,11 +4461,13 @@ dr_suspend_all_other_threads_ex(OUT void ***drcontexts,
                      * the world but not examine the threads, so we lazily
                      * translate in dr_get_mcontext().
                      */
+#ifndef CROWD_SAFE_INTEGRATION
                     CLIENT_ASSERT(!dcontext->client_data->suspended,
                                   "inconsistent usage of dr_suspend_all_other_threads");
                     CLIENT_ASSERT(dcontext->client_data->cur_mc == NULL,
                                   "inconsistent usage of dr_suspend_all_other_threads");
                     dcontext->client_data->suspended = true;
+#endif
                }
             }
         }
@@ -4385,6 +4498,12 @@ dr_resume_all_other_threads(IN void **drcontexts,
     thread_record_t **threads;
     int num_threads;
     uint i;
+
+#ifdef CROWD_SAFE_INTEGRATION
+    ASSERT_NOT_IMPLEMENTED(true);
+    return false;
+#endif
+
     CLIENT_ASSERT(drcontexts != NULL,
                   "dr_suspend_all_other_threads invalid params");
     LOG(GLOBAL, LOG_FRAGMENT, 2, 
@@ -5089,6 +5208,7 @@ void
 dr_insert_read_tls_field(void *drcontext, instrlist_t *ilist, instr_t *where,
                                reg_id_t reg)
 {
+#ifndef CROWD_SAFE_INTEGRATION
     dcontext_t *dcontext = (dcontext_t *) drcontext;
     CLIENT_ASSERT(drcontext != NULL,
                   "dr_insert_read_tls_field: drcontext cannot be NULL");
@@ -5110,6 +5230,7 @@ dr_insert_read_tls_field(void *drcontext, instrlist_t *ilist, instr_t *where,
                 (dcontext, opnd_create_reg(reg),
                  OPND_CREATE_ABSMEM(&dcontext->client_data->user_field, OPSZ_PTR)));
     }
+#endif
 }
 
 DR_API
@@ -5122,6 +5243,7 @@ void
 dr_insert_write_tls_field(void *drcontext, instrlist_t *ilist, instr_t *where,
                                 reg_id_t reg)
 {
+#ifndef CROWD_SAFE_INTEGRATION
     dcontext_t *dcontext = (dcontext_t *) drcontext;
     CLIENT_ASSERT(drcontext != NULL,
                   "dr_insert_write_tls_field: drcontext cannot be NULL");
@@ -5148,6 +5270,7 @@ dr_insert_write_tls_field(void *drcontext, instrlist_t *ilist, instr_t *where,
                  (&dcontext->client_data->user_field, OPSZ_PTR),
                  opnd_create_reg(reg)));
     }
+#endif
 }
 
 DR_API void 
@@ -5622,6 +5745,9 @@ dr_mcontext_xmm_fields_valid(void)
 bool
 dr_get_mcontext_priv(dcontext_t *dcontext, dr_mcontext_t *dmc, priv_mcontext_t *mc)
 {
+#ifdef CROWD_SAFE_INTEGRATION
+	return false;
+#else
     char *state;
     CLIENT_ASSERT(!TEST(SELFPROT_DCONTEXT, DYNAMO_OPTION(protect_mask)),
                   "DR context protection NYI");
@@ -5638,7 +5764,7 @@ dr_get_mcontext_priv(dcontext_t *dcontext, dr_mcontext_t *dmc, priv_mcontext_t *
     } else
         CLIENT_ASSERT(dmc == NULL, "invalid internal params");
 
-#ifdef CLIENT_INTERFACE
+# ifdef CLIENT_INTERFACE
     /* i#117/PR 395156: support getting mcontext from events where mcontext is
      * stable.  It would be nice to support it from init and 1st thread init,
      * but the mcontext is not available at those points.
@@ -5699,7 +5825,7 @@ dr_get_mcontext_priv(dcontext_t *dcontext, dr_mcontext_t *dmc, priv_mcontext_t *
             return false;
         return true;
     }
-#endif
+# endif
 
     /* dr_prepare_for_call() puts the machine context on the dstack
      * with pusha and pushf, but only fills in xmm values for
@@ -5722,6 +5848,7 @@ dr_get_mcontext_priv(dcontext_t *dcontext, dr_mcontext_t *dmc, priv_mcontext_t *
     /* XXX: should we set the pc field? */
 
     return true;
+#endif
 }
 
 DR_API bool
@@ -5735,6 +5862,9 @@ dr_get_mcontext(void *drcontext, dr_mcontext_t *dmc)
 DR_API bool
 dr_set_mcontext(void *drcontext, dr_mcontext_t *context)
 {
+#ifdef CROWD_SAFE_INTEGRATION
+	return false;
+#else
     char *state;
     dcontext_t *dcontext = (dcontext_t *)drcontext;
     CLIENT_ASSERT(!TEST(SELFPROT_DCONTEXT, DYNAMO_OPTION(protect_mask)),
@@ -5771,6 +5901,7 @@ dr_set_mcontext(void *drcontext, dr_mcontext_t *context)
     /* XXX: should we support setting the pc field? */
 
     return true;
+#endif
 }
 
 DR_API
@@ -5862,6 +5993,7 @@ dr_delete_fragment(void *drcontext, void *tag)
                   "dr_delete_fragment(): drcontext does not belong to current thread");
 #endif
     f = fragment_lookup(dcontext, tag);
+#ifndef CROWD_SAFE_INTEGRATION
     if (f != NULL && (f->flags & FRAG_CANNOT_DELETE) == 0) {
         client_todo_list_t * todo = HEAP_TYPE_ALLOC(dcontext, client_todo_list_t,
                                                     ACCT_CLIENT, UNPROTECTED);
@@ -5886,6 +6018,7 @@ dr_delete_fragment(void *drcontext, void *tag)
             unlink_fragment_incoming(dcontext, f);
         fragment_remove_from_ibt_tables(dcontext, f, false);
     }
+#endif
 #ifdef CLIENT_SIDELINE
     fragment_release_fragment_delete_mutex(dcontext);
     mutex_unlock(&(dcontext->client_data->sideline_mutex));
@@ -5927,6 +6060,7 @@ dr_replace_fragment(void *drcontext, void *tag, instrlist_t *ilist)
 #endif
     f = fragment_lookup(dcontext, tag);
     frag_found = (f != NULL);
+#ifndef CROWD_SAFE_INTEGRATION
     if (frag_found) {
         client_todo_list_t * iter = dcontext->client_data->to_do;
         client_todo_list_t * todo = HEAP_TYPE_ALLOC(dcontext, client_todo_list_t,
@@ -5948,6 +6082,7 @@ dr_replace_fragment(void *drcontext, void *tag, instrlist_t *ilist)
             unlink_fragment_incoming(dcontext, f);
         fragment_remove_from_ibt_tables(dcontext, f, false);
     }
+#endif
 #ifdef CLIENT_SIDELINE
     fragment_release_fragment_delete_mutex(dcontext);
     mutex_unlock(&(dcontext->client_data->sideline_mutex));
@@ -5968,6 +6103,7 @@ DR_API
  */
 void dr_flush_fragments(void *drcontext, void *curr_tag, void *flush_tag)
 {
+#ifndef CROWD_SAFE_INTEGRATION
     client_flush_req_t *iter, *flush;
     dcontext_t *dcontext = (dcontext_t *)drcontext;
 
@@ -6004,6 +6140,7 @@ void dr_flush_fragments(void *drcontext, void *curr_tag, void *flush_tag)
             iter = iter->next;
         iter->next = flush;
     }
+#endif
 }
 #endif /* UNSUPPORTED_API */
 
@@ -6243,9 +6380,13 @@ dr_app_pc_from_cache_pc(byte *cache_pc)
     if (!waslinking)
         enter_couldbelinking(dcontext, NULL, false);
     /* suppress asserts about faults in meta instrs */
+#ifndef CROWD_SAFE_INTEGRATION
     DODEBUG({ dcontext->client_data->is_translating = true; });
+#endif
     res = recreate_app_pc(dcontext, cache_pc, NULL);
+#ifndef CROWD_SAFE_INTEGRATION
     DODEBUG({ dcontext->client_data->is_translating = false; });
+#endif
     if (!waslinking)
         enter_nolinking(dcontext, NULL, false);
     return res;

@@ -55,6 +55,16 @@
 # include "decode_fast.h" /* for decode_next_pc for stress_recreate_pc */
 #endif
 
+#ifdef CROWD_SAFE_INTEGRATION
+# include "instrument.h"
+# include "../ext/link-observer/link_observer.h"
+# include "../ext/link-observer/link_tracker.h"
+# include "../../ext/link-observer/crowd_safe_util.h"
+# include "../../ext/link-observer/crowd_safe_trace.h"
+# include "../../ext/link-observer/basic_block_hashtable.h"
+# include "../../ext/link-observer/indirect_link_observer.h"
+#endif
+
 #define STATS_FCACHE_ADD(flags, stat, val) DOSTATS({   \
     if (TEST(FRAG_SHARED, (flags))) {                  \
         if (IN_TRACE_CACHE(flags))                     \
@@ -929,6 +939,10 @@ emit_fragment_common(dcontext_t *dcontext, app_pc tag,
         else
             link_new_fragment(dcontext, f);
     }
+
+#ifdef CROWD_SAFE_INTEGRATION
+    notify_basic_block_linking_complete(dcontext, f);
+#endif
 
     if (add_to_htable) {
         if (TEST(FRAG_COARSE_GRAIN, f->flags)) {

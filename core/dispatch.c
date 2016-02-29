@@ -73,6 +73,13 @@
 # include "vmkuw.h"
 #endif
 
+#ifdef CROWD_SAFE_INTEGRATION
+# include "../../ext/link-observer/link_observer.h"
+# include "../../ext/link-observer/indirect_link_observer.h"
+# include "../../ext/link-observer/crowd_safe_trace.h"
+# include "../../ext/link-observer/execution_monitor.h"
+#endif
+
 /* forward declarations */
 static void
 dispatch_enter_dynamorio(dcontext_t *dcontext);
@@ -82,9 +89,6 @@ dispatch_enter_fcache(dcontext_t *dcontext, fragment_t *targetf);
 
 static void
 dispatch_enter_fcache_stats(dcontext_t *dcontext, fragment_t *targetf);
-
-static void
-enter_fcache(dcontext_t *dcontext, fcache_enter_func_t entry, cache_pc pc);
 
 static void
 dispatch_enter_native(dcontext_t *dcontext);
@@ -128,6 +132,10 @@ dispatch(dcontext_t *dcontext)
 {
     fragment_t *targetf;
     fragment_t coarse_f;
+
+#ifdef CROWD_SAFE_INTEGRATION
+    crowd_safe_dispatch(dcontext);
+#endif
 
 #ifdef HAVE_TLS
     ASSERT(dcontext == get_thread_private_dcontext());
@@ -482,7 +490,7 @@ dispatch_enter_fcache(dcontext_t *dcontext, fragment_t *targetf)
  * FIXME: only allow access to fcache_enter routine through here?
  * Indirect routine needs special treatment for handle_callback_return
  */
-static void
+void
 enter_fcache(dcontext_t *dcontext, fcache_enter_func_t entry, cache_pc pc)
 {
     ASSERT(!is_couldbelinking(dcontext));
@@ -509,6 +517,24 @@ enter_fcache(dcontext_t *dcontext, fcache_enter_func_t entry, cache_pc pc)
         dcontext->cache_frag_count = (uint64) 0;
         dcontext->cache_enter_time = get_time();
     }
+#endif
+
+#ifdef CROWD_SAFE_INTEGRATION
+    DODEBUG({
+        if (CROWD_SAFE_BB_GRAPH()) {
+            ibp_metadata_t *ibp_data = GET_IBP_METADATA(dcontext);
+            if (IBP_PATH_IS_PENDING(ibp_data)) {
+                CS_ERR("Entering fcache with pending IBP "PX" - "PX"!\n",
+                    ibp_data->ibp_from_tag, ibp_data->ibp_to_tag);
+
+                ASSERT(!IBP_PATH_IS_PENDING(ibp_data));
+            }
+        }
+    });
+# ifdef MONITOR_UNEXPECTED_IBP
+    start_fcache_clock(dcontext, false);
+# endif
+    log_shadow_stack(dcontext, GET_CS_DATA(dcontext), "=frag=");
 #endif
 
     dcontext->whereami = WHERE_FCACHE;
@@ -626,6 +652,18 @@ dispatch_enter_native(dcontext_t *dcontext)
         ASSERT_NOT_REACHED();
 #endif
     }
+
+#ifdef CROWD_SAFE_INTEGRATION
+    DODEBUG({
+        if (CROWD_SAFE_BB_GRAPH()) {
+            ibp_metadata_t *ibp_data = GET_IBP_METADATA(dcontext); // cs-todo: consolidate these lookups
+            if (IBP_PATH_IS_PENDING(ibp_data))
+                CS_ERR("Entering fcache with pending IBP "PX" - "PX"!\n",
+                    ibp_data->ibp_from_tag, ibp_data->ibp_to_tag);
+        }
+    });
+#endif
+
     set_fcache_target(dcontext, dcontext->next_tag);
     dcontext->whereami = WHERE_APP;
     (*go_native)(dcontext);
@@ -728,7 +766,19 @@ dispatch_enter_dynamorio(dcontext_t *dcontext)
             
             dcontext->next_tag = EXIT_TARGET_TAG(dcontext, dcontext->last_fragment,
                                                  dcontext->last_exit);
+#ifdef CROWD_SAFE_INTEGRATION
+            if (CROWD_SAFE_BB_GRAPH() && !TEST(FRAG_IS_TRACE, dcontext->last_fragment->flags) 
+                /* && !TEST(LINK_FRAG_OFFS_AT_END, dcontext->last_exit->flags)*/) { /* assuming trace linked as bb first */
+                byte exit_ordinal = find_direct_link_exit_ordinal(dcontext->last_fragment, dcontext->next_tag);
+                if (exit_ordinal < 0xff)
+                    notify_linking_fragments(dcontext, dcontext->last_fragment, dcontext->next_tag, exit_ordinal);
+            }
+#endif
         } else {
+#ifdef CROWD_SAFE_INTEGRATION
+            if (CROWD_SAFE_BB_GRAPH())
+                indirect_link_hashtable_insert(dcontext, true);
+#endif
             /* get src info from coarse ibl exit into the right place */
             if (DYNAMO_OPTION(coarse_units)) {
                 if (is_ibl_sourceless_linkstub((const linkstub_t*)dcontext->last_exit))
@@ -1002,7 +1052,7 @@ dispatch_exit_fcache(dcontext_t *dcontext)
     }
 #endif
 
-#ifdef CLIENT_INTERFACE
+#if defined(CLIENT_INTERFACE) && !defined(CROWD_SAFE_INTEGRATION)
     /* is ok to put the lock after the null check, this is only 
      * place they can be deleted 
      */
@@ -1651,6 +1701,24 @@ handle_system_call(dcontext_t *dcontext)
     }
 #endif
 
+#ifdef MONITOR_UNEXPECTED_IBP
+# ifdef REPORT_SYSCALL_FREQUENCY
+    report_syscall_frequency(mc->xax);
+# endif
+
+    if (is_stack_spy_sysnum(mc->xax)) {
+        local_crowd_safe_data_t *csd = GET_CS_DATA(dcontext);
+        if (csd->stack_spy_mark > 0UL && !is_benign_alloc(dcontext)) {
+            crowd_safe_thread_local_t *cstl = csd->crowd_safe_thread_local;
+
+            CS_DET("SPY| [0x%llx] Warning: executing syscall 0x%x on a suspicious stack!\n", dr_get_milliseconds(), mc->xax);
+            CS_DET("SPY| \tNext tag is "PX"\n", dcontext->next_tag);
+
+            write_meta_suspicious_syscall(dcontext, mc->xax, &cstl->stack_suspicion);
+        }
+    }
+#endif
+
 #ifdef CLIENT_INTERFACE 
     /* We invoke here rather than inside pre_syscall() primarily so we can
      * set use_prev_dcontext(), but also b/c the windows and linux uses
@@ -1836,6 +1904,11 @@ handle_system_call(dcontext_t *dcontext)
 
         SELF_PROTECT_LOCAL(dcontext, READONLY);
 
+#ifdef CROWD_SAFE_INTEGRATION
+        if (CROWD_SAFE_BB_GRAPH())
+            log_shadow_stack(dcontext, GET_CS_DATA(dcontext), "=sys=");
+#endif
+
         set_at_syscall(dcontext, true);
         KSTART_DC(dcontext, syscall_fcache); /* stopped in dispatch_exit_fcache_stats */
         enter_fcache(dcontext, fcache_enter, do_syscall);
@@ -1953,6 +2026,19 @@ handle_callback_return(dcontext_t *dcontext)
     dcontext->whereami = WHERE_FCACHE;
     set_at_syscall(dcontext, true); /* will be set to false on other end's post-syscall */
     ASSERT(!is_couldbelinking(dcontext));
+
+#ifdef CROWD_SAFE_INTEGRATION
+    if (CROWD_SAFE_BB_GRAPH()) {
+        ibp_metadata_t *ibp_data = GET_IBP_METADATA(prev_dcontext); // cs-todo: consolidate these lookups
+        if (IBP_PATH_IS_PENDING(ibp_data)) {
+            CS_ERR("Entering fcache with pending IBP "PX" - "PX"!\n",
+                ibp_data->ibp_from_tag, ibp_data->ibp_to_tag);
+
+            ASSERT(!IBP_PATH_IS_PENDING(ibp_data));
+        }
+        log_shadow_stack(dcontext, GET_CS_DATA(dcontext), "=callback=");
+    }
+#endif
 
     /* if we get an APC it should be after returning to prev cxt, so don't need
      * to worry about asynch_target

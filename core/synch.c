@@ -43,6 +43,11 @@
 #include "fcache.h" /* in_fcache() */
 #include <string.h> /* for memcpy */
 
+#ifdef CROWD_SAFE_INTEGRATION
+# include "../ext/link-observer/crowd_safe_util.h"
+# include "../ext/link-observer/crowd_safe_trace.h"
+#endif
+
 extern vm_area_vector_t *fcache_unit_areas; /* from fcache.c */
 
 static void
@@ -481,14 +486,16 @@ at_safe_spot(thread_record_t *trec, priv_mcontext_t *mc,
          * routines or generated code. */
         if (IS_CLIENT_THREAD(trec->dcontext)) {
             safe = (trec->dcontext->client_data->client_thread_safe_for_synch ||
-                    is_in_client_lib(mc->pc)) &&
+                    is_in_client_lib(mc->pc)) && (
                 /* Do not cleanup/terminate a thread holding a client lock (PR 558463) */
                 /* Actually, don't consider a thread holding a client lock to be safe
                  * at all (PR 609569): client should use
                  * dr_client_thread_set_suspendable(false) if its thread spends a lot
                  * of time holding locks.
                  */
-                (!should_suspend_client_thread(trec->dcontext, desired_state) ||
+# ifdef CLIENT_SIDELINE
+                !should_suspend_client_thread(trec->dcontext, desired_state) ||
+# endif
                  trec->dcontext->client_data->mutex_count == 0);
         }
 #endif
@@ -1095,6 +1102,10 @@ synch_with_all_threads(thread_synch_state_t desired_synch_state,
     bool finished_non_client_threads;
 #endif
 
+#ifdef CROWD_SAFE_INTEGRATION
+    CS_LOG("Synch with all threads requested: state %d -> %d\n", cur_state, desired_synch_state);
+#endif
+
     ASSERT(!dynamo_all_threads_synched);
     /* flag any caller who does not give up enough permissions to avoid livelock
      * with other synch_with_all_threads callers
@@ -1265,9 +1276,12 @@ synch_with_all_threads(thread_synch_state_t desired_synch_state,
                     all_synched = false;
                     continue; /* skip this thread for now till non-client are finished */
                 }
-                if (IS_CLIENT_THREAD(threads[i]->dcontext) &&
-                    !should_suspend_client_thread(threads[i]->dcontext,
-                                                  desired_synch_state)) {
+                if (IS_CLIENT_THREAD(threads[i]->dcontext)
+# ifdef CLIENT_SIDELINE
+                    && !should_suspend_client_thread(threads[i]->dcontext,
+                                                     desired_synch_state)
+# endif
+                                                  ) {
                     /* PR 609569: do not suspend this thread.
                      * Avoid races between resume_all_threads() and
                      * dr_client_thread_set_suspendable() by storing the fact.
@@ -1281,7 +1295,9 @@ synch_with_all_threads(thread_synch_state_t desired_synch_state,
                      * long as it doesn't touch their thread-private data.
                      */
                     synch_array[i] = SYNCH_WITH_ALL_SYNCHED;
+# ifndef CROWD_SAFE_INTEGRATION
                     threads[i]->dcontext->client_data->left_unsuspended = true;
+# endif
                     continue;
                 }
 #endif
@@ -1403,6 +1419,12 @@ synch_with_all_threads(thread_synch_state_t desired_synch_state,
     *threads_out = threads;
     *num_threads_out = num_threads;
     dynamo_all_threads_synched = all_synched;
+
+#ifdef CROWD_SAFE_INTEGRATION
+    if (all_synched)
+        notify_all_threads_synched(desired_synch_state, cur_state);
+#endif
+
     /* FIXME case 9392: where on all_synch failure we do not release the locks in the
      * non-abort exit path */
     return all_synched;
@@ -1641,6 +1663,12 @@ translate_from_synchall_to_dispatch(thread_record_t *tr, thread_synch_state_t sy
             "\tsent to reset exit stub "PFX"\n", mc->xip);
         /* make dispatch happy */
         dcontext->whereami = WHERE_FCACHE;
+
+#ifdef CROWD_SAFE_INTEGRATION
+        if (CROWD_SAFE_BB_GRAPH())
+            log_shadow_stack(dcontext, GET_CS_DATA(dcontext), "=synch=");
+#endif
+
 #if defined(WINDOWS) && defined(CLIENT_INTERFACE)
         /* i#25: we could have interrupted thread in DR, where has priv fls data
          * in TEB, and fcache_return blindly copies into app fls: so swap to app

@@ -4519,6 +4519,11 @@ append_ibl_found(dcontext_t *dcontext, instrlist_t *ilist,
             APP(ilist, SAVE_TO_TLS(dcontext, REG_XBX, DIRECT_STUB_SPILL_SLOT));
         }
     }
+
+#ifdef CROWD_SAFE_INTEGRATION    
+    append_indirect_link_notification_hook(dcontext, ilist, ibl_code->indirect_branch_lookup_routine);
+#endif    
+
     if (IF_X64_ELSE(x86_to_x64, false)) {
         APP(ilist, RESTORE_FROM_REG(dcontext, REG_XBX, REG_R10));
     } else if (absolute) {
@@ -5579,6 +5584,10 @@ emit_indirect_branch_lookup(dcontext_t *dcontext, generated_code_t *code, byte *
      *>>>    mov     %xbx, %xcx                                      */
     APP(&ilist, fragment_not_found);
 
+#ifdef CROWD_SAFE_INTEGRATION    
+    prepare_fcache_return_from_ibl(dcontext, &ilist, ibl_code);
+#endif 
+
     /* This counter will also get the unlink inline indirect branch race
      * condition cases (if !atomic_inlined_linking), but that should almost 
      * never happen so don't worry about it screwing up the count */
@@ -5920,6 +5929,10 @@ emit_indirect_branch_lookup(dcontext_t *dcontext, generated_code_t *code, byte *
     }
 #endif
 
+#ifdef CROWD_SAFE_INTEGRATION    
+    append_indirect_link_notification(dcontext, &ilist, ibl_code, fragment_not_found);
+#endif
+
     ibl_code->ibl_routine_length = encode_with_patch_list(dcontext, patch, &ilist, pc);
 
     /* free the instrlist_t elements */
@@ -6050,7 +6063,8 @@ update_indirect_branch_lookup(dcontext_t *dcontext)
  */
 byte *
 emit_far_ibl(dcontext_t *dcontext, byte *pc, ibl_code_t *ibl_code,
-             cache_pc ibl_same_mode_tgt _IF_X64(far_ref_t *far_jmp_opnd))
+             cache_pc ibl_same_mode_tgt, bool is_gencode_ibl_lookup
+             _IF_X64(far_ref_t *far_jmp_opnd))
 {
     instrlist_t ilist;
     instrlist_init(&ilist);
@@ -6169,6 +6183,12 @@ emit_far_ibl(dcontext_t *dcontext, byte *pc, ibl_code_t *ibl_code,
          */
         APP(&ilist, INSTR_CREATE_jmp
             (dcontext, opnd_create_pc(ibl_same_mode_tgt)));
+
+#ifdef CROWD_SAFE_INTEGRATION
+        if (is_gencode_ibl_lookup) {
+            track_ibl_routine(pc);
+        }
+#endif
 #ifdef X64
     }
 #endif
@@ -6446,7 +6466,7 @@ emit_shared_syscall(dcontext_t *dcontext, generated_code_t *code, byte *pc,
     byte *start_pc = pc;
     instr_t *syscall; /* remember after-syscall pc b/c often suspended there */
     /* relative labels */
-    instr_t *linked, *jecxz, *unlink, *skip_syscall = NULL;
+    instr_t *linked, *jecxz, *unlink, *skip_syscall = NULL, *jmp;
     bool absolute = !thread_shared;
     uint after_syscall_ptr = 0;
     uint syscall_method = get_syscall_method();
@@ -6878,7 +6898,11 @@ emit_shared_syscall(dcontext_t *dcontext, generated_code_t *code, byte *pc,
      * hole.
      */
     if (!inline_ibl_head) {
-        APP(&ilist, INSTR_CREATE_jmp(dcontext, opnd_create_pc(ind_br_lookup_pc)));
+        jmp = INSTR_CREATE_jmp(dcontext, opnd_create_pc(ind_br_lookup_pc));
+        APP(&ilist, jmp);
+#ifdef CROWD_SAFE_INTEGRATION
+        append_post_syscall_ibl(dcontext, &ilist, jmp);
+#endif        
     } else {
         append_ibl_head(dcontext, &ilist, ibl_code, patch, NULL, NULL, NULL,
                         opnd_create_pc(ind_br_lookup_pc),
@@ -6951,7 +6975,11 @@ emit_shared_syscall(dcontext_t *dcontext, generated_code_t *code, byte *pc,
                 APP(&ilist, SAVE_TO_TLS(dcontext, REG_XBX, TLS_XBX_SLOT));
         }
     }
-    APP(&ilist, INSTR_CREATE_jmp(dcontext, opnd_create_pc(unlinked_ib_lookup_pc)));
+    jmp = INSTR_CREATE_jmp(dcontext, opnd_create_pc(unlinked_ib_lookup_pc));
+    APP(&ilist, jmp);
+#ifdef CROWD_SAFE_INTEGRATION
+    append_post_syscall_ibl(dcontext, &ilist, jmp);
+#endif        
 
     pc += encode_with_patch_list(dcontext, patch, &ilist, pc);
     if (syscall_method == SYSCALL_METHOD_SYSENTER) {
@@ -7517,6 +7545,21 @@ emit_do_vmkuw_syscall(dcontext_t *dcontext, generated_code_t *code, byte *pc,
 # endif
 #endif /* UNIX */
 
+#ifdef CROWD_SAFE_INTEGRATION
+byte * 
+emit_do_throw_exception(dcontext_t *dcontext, generated_code_t *code, byte *pc)
+{
+    instrlist_t ilist;
+    instr_t *exception = INSTR_CREATE_int(dcontext, OPND_CREATE_INT8((char)0xd));
+    
+    instrlist_init(&ilist);
+    APP(&ilist, exception);
+    pc = instrlist_encode(dcontext, &ilist, pc, false);
+    instrlist_clear(dcontext, &ilist);
+    return pc;
+}
+#endif
+
 byte * 
 emit_do_syscall(dcontext_t *dcontext, generated_code_t *code, byte *pc,
                 byte *fcache_return_pc, bool thread_shared, bool force_int,
@@ -7980,6 +8023,11 @@ emit_special_ibl_xfer(dcontext_t *dcontext, byte *pc, generated_code_t *code,
         APP(&ilist, nop_inst);
     }
     APP(&ilist, INSTR_CREATE_jmp(dcontext, opnd_create_pc(ibl_tgt)));
+
+#ifdef CROWD_SAFE_INTEGRATION
+    track_ibl_routine(pc); 
+#endif 
+
     add_patch_marker(&patch, instrlist_last(&ilist),
                      PATCH_UINT_SIZED /* pc relative */,
                      0 /* point at opcode of jecxz */,

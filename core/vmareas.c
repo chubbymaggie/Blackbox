@@ -68,6 +68,13 @@
 
 #include <string.h>
 
+#ifdef CROWD_SAFE_INTEGRATION
+# include "../ext/link-observer/link_observer.h"
+# include "../ext/link-observer/crowd_safe_util.h"
+# include "../ext/link-observer/module_observer.h"
+#define JITOPT_NARROW_VMAREAS 1
+#endif
+
 enum {
     /* VM_ flags to distinguish region types 
      * We also use some FRAG_ flags (but in a separate field so no value space overlap)
@@ -637,6 +644,8 @@ vm_make_writable(byte *pc, size_t size)
         make_writable(start_pc, final_size);
     ASSERT(ok);
     ASSERT(INTERNAL_OPTION(cache_consistency));
+
+    CS_DET("W+X| vm_make_writable: "PX" +0x%x\n", pc, size);
 }
 
 static void
@@ -646,6 +655,8 @@ vm_make_unwritable(byte *pc, size_t size)
     size_t final_size = ALIGN_FORWARD(size + (pc - start_pc), PAGE_SIZE);
     ASSERT(INTERNAL_OPTION(cache_consistency));
     make_unwritable(start_pc, final_size);
+
+    CS_DET("W+X| vm_make_unwritable: "PX" +0x%x\n", pc, size);
 
     /* case 8308: We should never call vm_make_unwritable if
      * -sandbox_writable is on, or if -sandbox_non_text is on and this
@@ -870,6 +881,18 @@ vm_area_merge_fraglists(vm_area_t *dst, vm_area_t *src)
     }
 }
 
+static const char *
+name_vm_area(vm_area_vector_t *v)
+{
+    if (v == executable_areas)
+        return "executable_areas";
+    if (v == &shared_data->areas)
+        return "shared_data";
+    if (v == landing_pad_areas)
+        return "landing_pad_areas";
+    return "";
+}
+
 /* Assumes caller holds v->lock, if necessary.
  * Does not return the area added since it may be merged or split depending
  * on existing areas->
@@ -892,8 +915,8 @@ vm_area_merge_fraglists(vm_area_t *dst, vm_area_t *src)
  * to access the added area.
  */
 static void
-add_vm_area(vm_area_vector_t *v, app_pc start, app_pc end,
-            uint vm_flags, uint frag_flags, void *data _IF_DEBUG(const char *comment))
+add_vm_area_unit(vm_area_vector_t *v, app_pc start, app_pc end,
+                 uint vm_flags, uint frag_flags, void *data _IF_DEBUG(const char *comment))
 {
     int i, j, diff;
     /* if we have overlap, we extend an existing area -- else we add a new area */
@@ -901,6 +924,9 @@ add_vm_area(vm_area_vector_t *v, app_pc start, app_pc end,
     DEBUG_DECLARE(uint flagignore;)
 
     ASSERT(start < end);
+
+    CS_DET("add_vm_area_unit: %s "PX"-"PX" (vm 0x%x) (frag 0x%x)\n",
+           name_vm_area(v), start, end, vm_flags, frag_flags);
 
     ASSERT_VMAREA_VECTOR_PROTECTED(v, WRITE);
     LOG(GLOBAL, LOG_VMAREAS, 4, "in add_vm_area "PFX" "PFX" %s\n", start, end, comment);
@@ -920,6 +946,23 @@ add_vm_area(vm_area_vector_t *v, app_pc start, app_pc end,
               v->should_merge_func(true/*adjacent*/, data, v->buf[i].custom.client)))) {
             ASSERT(!(start < v->buf[i].end && end > v->buf[i].start) ||
                    !TEST(VECTOR_NEVER_OVERLAP, v->flags));
+
+#ifdef JITOPT_NARROW_VMAREAS
+            if ((v == executable_areas || TEST(VM_EXECUTED_FROM, vm_flags)) &&
+                !TEST(VM_UNMOD_IMAGE, vm_flags)) {
+                if (start == v->buf[i].end) {
+                    if ((i+1) < v->length && start == v->buf[i+1].start && end == v->buf[i+1].end)
+                        return; /* already have this one */
+                    i++;
+                } else {
+                    if (start == v->buf[i].start && end == v->buf[i].end)
+                        return; /* already have this one */
+                    ASSERT(end == v->buf[i].start);
+                }
+                break;
+            }
+#endif
+
             if (overlap_start == -1) {
                 /* assume we'll simply expand an existing area rather than
                  * add a new one -- we'll reset this if we hit merge conflicts */
@@ -1075,7 +1118,7 @@ add_vm_area(vm_area_vector_t *v, app_pc start, app_pc end,
                          * we are currently looking at in the vector */
                         if (v->split_payload_func != NULL)
                             add_data = v->split_payload_func(data);
-                        add_vm_area(v, v->buf[i].end, end, vm_flags, frag_flags,
+                        add_vm_area_unit(v, v->buf[i].end, end, vm_flags, frag_flags,
                                     add_data _IF_DEBUG(comment));
                     }
                     /* if had been merging, let this routine finish that off -- else,
@@ -1127,6 +1170,15 @@ add_vm_area(vm_area_vector_t *v, app_pc start, app_pc end,
         strncpy(new_area.comment, comment, len);
         new_area.comment[len]  = '\0'; /* if max no null */
 #endif
+
+#ifdef CROWD_SAFE_INTEGRATION
+        if (v == executable_areas) {
+            CS_DET("New executable vmarea: "PX"-"PX"\n", start, end);
+        } else if (v == dynamo_areas) {
+            CS_DET("New dynamo vmarea: "PX"-"PX"\n", start, end);
+        }
+#endif
+
         new_area.custom.client = data;
         LOG(GLOBAL, LOG_VMAREAS, 3, "=> adding "PFX"-"PFX"\n", start, end);
         vm_area_vector_check_size(v);
@@ -1161,6 +1213,11 @@ add_vm_area(vm_area_vector_t *v, app_pc start, app_pc end,
         });
 #endif
     } else {
+#ifdef CROWD_SAFE_INTEGRATION
+        app_pc original_start = v->buf[overlap_start].start;
+        app_pc original_end = v->buf[overlap_start].end;
+#endif
+
         /* overlaps one or more areas, modify first to equal entire range,
          * delete rest
          */
@@ -1222,8 +1279,38 @@ add_vm_area(vm_area_vector_t *v, app_pc start, app_pc end,
             /* have to remove all alsos that are now in same area as frag */
             vm_area_clean_fraglist(dcontext, &v->buf[i]);
         }
+#ifdef CROWD_SAFE_INTEGRATION
+        code_area_expanded(original_start, original_end, v->buf[overlap_start].start,
+            v->buf[overlap_start].end, v == dynamo_areas);
+#endif
     }
     DOLOG(5, LOG_VMAREAS, { print_vm_areas(v, GLOBAL); });
+}
+
+static void
+add_vm_area(vm_area_vector_t *v, app_pc start, app_pc end,
+            uint vm_flags, uint frag_flags, void *data _IF_DEBUG(const char *comment))
+{
+#ifdef JITOPT_NARROW_VMAREAS
+    if ((v == executable_areas || TEST(VM_EXECUTED_FROM, vm_flags)) &&
+        !(TEST(VM_UNMOD_IMAGE, vm_flags)) && (end - start) > PAGE_SIZE) {
+        app_pc unit;
+
+        for (unit = start; (unit + PAGE_SIZE) <= end; unit += PAGE_SIZE) {
+            add_vm_area_unit(v, unit, unit + PAGE_SIZE,
+                             vm_flags, frag_flags, data _IF_DEBUG(comment));
+        }
+        if (unit < end) {
+            add_vm_area_unit(v, unit, end,
+                             vm_flags, frag_flags, data _IF_DEBUG(comment));
+        }
+    } else {
+        add_vm_area_unit(v, start, end,
+                         vm_flags, frag_flags, data _IF_DEBUG(comment));
+    }
+#else
+    add_vm_area_unit(v, start, end, vm_flags, frag_flags, data _IF_DEBUG(comment));
+#endif
 }
 
 static void
@@ -1282,6 +1369,15 @@ remove_vm_area(vm_area_vector_t *v, app_pc start, app_pc end, bool restore_prot)
      * custom.frags and not custom.client
      */
     bool official_coarse_vector = (v == executable_areas);
+
+#ifdef CROWD_SAFE_INTEGRATION
+    CS_DET("remove_vm_area: %s "PX"-"PX"\n", name_vm_area(v), start, end);
+
+    if (v == executable_areas)
+        CS_DET("Removing executable vmarea: "PX"-"PX"\n", start, end);
+    else if (v == dynamo_areas)
+        CS_DET("Removing dynamo vmarea: "PX"-"PX"\n", start, end);
+#endif
 
     ASSERT_VMAREA_VECTOR_PROTECTED(v, WRITE);
     LOG(GLOBAL, LOG_VMAREAS, 4, "in remove_vm_area "PFX" "PFX"\n", start, end);
@@ -2623,7 +2719,7 @@ vm_area_load_coarse_unit(app_pc start, app_pc end, uint vm_flags, uint frag_flag
  * check_thread_vm_area will mark it read only when a thread goes to build a 
  * block from the region */
 static bool
-add_executable_vm_area(app_pc start, app_pc end, uint vm_flags, uint frag_flags,
+add_executable_vm_area(dcontext_t *dcontext, app_pc start, app_pc end, uint vm_flags, uint frag_flags,
                        bool have_writelock _IF_DEBUG(const char *comment))
 {
     vm_area_t *existing_area = NULL;
@@ -2646,6 +2742,13 @@ add_executable_vm_area(app_pc start, app_pc end, uint vm_flags, uint frag_flags,
         ASSERT(!TESTANY(~expect, vm_flags));
     }
 #endif /* DEBUG */
+
+#ifdef CROWD_SAFE_INTEGRATION
+        if (!TEST(VM_UNMOD_IMAGE, vm_flags)) {
+            code_area_created(dcontext, start, end);
+        }
+#endif
+
     if (!have_writelock) {
 #ifdef HOT_PATCHING_INTERFACE
         /* case 9970: need to check hotp vs perscache; rank order hotp < exec_areas */
@@ -2729,7 +2832,7 @@ add_executable_vm_area(app_pc start, app_pc end, uint vm_flags, uint frag_flags,
 bool
 add_executable_region(app_pc start, size_t size _IF_DEBUG(const char *comment))
 {
-    return add_executable_vm_area(start, start+size, 0, 0, false/*no lock*/
+    return add_executable_vm_area(NULL, start, start+size, 0, 0, false/*no lock*/
                                   _IF_DEBUG(comment));
 }
 
@@ -2913,6 +3016,14 @@ is_executable_address(app_pc addr)
     found = lookup_addr(executable_areas, addr, NULL);
     read_unlock(&executable_areas->lock);
     return found;
+}
+
+/* lookup against the per-process executable addresses map */
+bool
+is_executable_address_locked(app_pc addr)
+{
+    ASSERT_OWN_READ_LOCK(true, &executable_areas->lock);
+    return lookup_addr(executable_areas, addr, NULL);
 }
 
 /* returns any VM_ flags associated with addr's vm area 
@@ -3746,6 +3857,19 @@ executable_vm_area_overlap(app_pc start, app_pc end, bool have_writelock)
     if (!have_writelock)
         read_unlock(&executable_areas->lock);
     return overlap;
+}
+
+void
+executable_areas_read_lock()
+{
+    read_lock(&executable_areas->lock);
+}
+
+void
+executable_areas_read_unlock()
+{
+    ASSERT_OWN_READ_LOCK(true, &executable_areas->lock);
+    read_unlock(&executable_areas->lock);
 }
 
 void
@@ -6011,7 +6135,7 @@ app_memory_allocation(dcontext_t *dcontext, app_pc base, size_t size, uint prot,
             /* all images start out with coarse-grain management */
             frag_flags |= FRAG_COARSE_GRAIN;
         }
-        add_executable_vm_area(base, base + size, image ? VM_UNMOD_IMAGE : 0, frag_flags,
+        add_executable_vm_area(dcontext, base, base + size, image ? VM_UNMOD_IMAGE : 0, frag_flags,
                                false/*no lock*/ _IF_DEBUG(comment));
         return true;
     } else if (dcontext==NULL ||
@@ -6083,6 +6207,11 @@ void
 app_memory_deallocation(dcontext_t *dcontext, app_pc base, size_t size,
                         bool own_initexit_lock, bool image)
 {
+#ifdef CROWD_SAFE_INTEGRATION
+    if ((size > 0) && !image)
+        memory_released(dcontext, base, base+size);
+#endif
+
     ASSERT(!dynamo_vm_area_overlap(base, base + size));
     /* we check for overlap regardless of memory protections, to allow flexible
      * policies that are independent of rwx bits -- if any overlap we remove,
@@ -6264,7 +6393,14 @@ app_memory_protection_change(dcontext_t *dcontext, app_pc base, size_t size,
 #ifdef WINDOWS
     uint frag_flags;
 #endif
+#ifdef CROWD_SAFE_INTEGRATION
+    uint tmp_memprot;
+#endif
     ASSERT(new_memprot != NULL);
+#ifdef CROWD_SAFE_INTEGRATION
+    if (old_memprot == NULL)
+        old_memprot = &tmp_memprot;
+#endif
     /* old_memprot is optional */
 
 #if defined(PROGRAM_SHEPHERDING) && defined(WINDOWS)
@@ -6656,7 +6792,7 @@ app_memory_protection_change(dcontext_t *dcontext, app_pc base, size_t size,
          * change from rw to r.  thus this should be like the change-to-selfmod case
          * in handle_modified_code => add new vector routine?  (case 3570)
          */
-        add_executable_vm_area(base, base + size,
+        add_executable_vm_area(dcontext, base, base + size,
                                0 /* not image? FIXME */, 0,
                                should_finish_flushing/* own lock if flushed */
                                _IF_DEBUG("protection change"));
@@ -6762,7 +6898,7 @@ app_memory_protection_change(dcontext_t *dcontext, app_pc base, size_t size,
             if (add_to_exec_list) {
                 /* FIXME : see note at top of function about bug 2833 */
                 ASSERT(!TEST(MEMPROT_WRITE, prot)); /* sanity check */
-                add_executable_vm_area(base, base + size, 
+                add_executable_vm_area(dcontext, base, base + size,
                                        0 /* not an unmodified image */, frag_flags,
                                        false/*no lock*/ _IF_DEBUG(comment));
             }
@@ -6877,7 +7013,7 @@ app_memory_protection_change(dcontext_t *dcontext, app_pc base, size_t size,
                 if (!DYNAMO_OPTION(sandbox_writable))
                     vm_flags |= VM_DELAY_READONLY;
 
-                add_executable_vm_area(base, base + size, vm_flags,
+                add_executable_vm_area(dcontext, base, base + size, vm_flags,
                                        0, should_finish_flushing/* own the lock if
                                                                    we have flushed */
                                        _IF_DEBUG("prot chg text rx->rwx not yet written"));
@@ -6919,6 +7055,30 @@ app_memory_protection_change(dcontext_t *dcontext, app_pc base, size_t size,
 #endif /* PROGRAM_SHEPHERDING */
     if (should_finish_flushing)
         flush_fragments_in_region_finish(dcontext, false /*don't keep initexit_lock*/);
+
+#ifdef CROWD_SAFE_INTEGRATION
+    {
+        module_location_t *containing_module = get_module_for_address(base);
+        if ((base > PC(0)) && (containing_module->type == module_type_anonymous)) {
+            bool has_been_executable = TEST(MEMPROT_EXEC, *old_memprot);
+            bool will_be_executable = TEST(MEMPROT_EXEC, prot);
+
+            CS_DET("DMP| Permission change on: "PX" +0x%x; contained by %s\n",
+                base, size, containing_module->module_name);
+
+            if (will_be_executable && !has_been_executable) {
+                CS_DET("DMP| Memory becomes executable: "PX" +0x%x; contained by %s, stack modules:\n",
+                    base, size, containing_module->module_name);
+
+                add_shadow_pages(dcontext, base, size, true);
+            } else if (has_been_executable && !will_be_executable) {
+                CS_DET("DMP| Memory becomes non-executable: "PX" +0x%x\n", base, size);
+
+                remove_shadow_pages(dcontext, base, size);
+            }
+        }
+    }
+#endif
 
     return DO_APP_MEM_PROT_CHANGE; /* let syscall go through */
 }
@@ -7898,7 +8058,7 @@ check_thread_vm_area(dcontext_t *dcontext, app_pc pc, app_pc tag, void **vmlist,
             }
             /* now add the new region to the global list */
             ASSERT(!TEST(FRAG_COARSE_GRAIN, frag_flags)); /* else no pre-exec query */
-            add_executable_vm_area(base_pc, base_pc+size, vm_flags | VM_EXECUTED_FROM,
+            add_executable_vm_area(dcontext, base_pc, base_pc+size, vm_flags | VM_EXECUTED_FROM,
                                    frag_flags, true/*own lock*/
                                    _IF_DEBUG("unexpected vm area"));
             ok = lookup_addr(executable_areas, pc, &area);
@@ -10460,7 +10620,7 @@ handle_modified_code(dcontext_t *dcontext, cache_pc instr_cache_pc,
                             old_start, old_end);
                         remove_vm_area(executable_areas, old_start, old_end, true);
                         /* now re-add */
-                        add_executable_vm_area(old_start, old_end,
+                        add_executable_vm_area(dcontext, old_start, old_end,
                                                old_vmf, old_ff | FRAG_SELFMOD_SANDBOXED,
                                                true /*own lock */
                                                _IF_DEBUG("selfmod replacement"));
@@ -10804,7 +10964,7 @@ vm_area_selfmod_check_clear_exec_count(dcontext_t *dcontext, fragment_t *f)
                  */
                 remove_vm_area(executable_areas, exec_area->start,
                                exec_area->end, false /* !restore_prot */);
-                ok = add_executable_vm_area(exec_area->start, exec_area->end,
+                ok = add_executable_vm_area(dcontext, exec_area->start, exec_area->end,
                                             exec_area->vm_flags,
                                             exec_area->frag_flags,
                                             true /*own lock */

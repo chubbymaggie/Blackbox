@@ -80,6 +80,13 @@ try_except_t global_try_except;
 extern void sideline_exit(void);
 #endif
 
+#ifdef CROWD_SAFE
+# include "../ext/link-observer/crowd_safe_util.h"
+# include "../ext/link-observer/link_observer.h"
+# include "../ext/link-observer/crowd_safe_trace.h"
+# include "x86/instrument.h"
+#endif
+
 /* use for soft errors that can handle some cleanup: assertions and apichecks
  * performs some cleanup and then calls os_terminate 
  */
@@ -136,6 +143,13 @@ DECLARE_FREQPROT_VAR(static bool do_once_internal_error, false);
 void
 internal_error(const char *file, int line, const char *expr)
 {
+#ifdef CROWD_SAFE_INTEGRATION
+    CS_LOG("DynamoRIO internal error at %s(%d): %s\n", file, line, expr);
+    CS_STACKTRACE();
+    notify_process_terminating(true);
+    close_crowd_safe_trace();
+#endif
+
     /* note that we no longer obfuscate filenames in non-internal builds
      * xref PR 303817 */
 
@@ -190,6 +204,13 @@ internal_error(const char *file, int line, const char *expr)
 void
 external_error(const char *file, int line, const char *msg)
 {
+#ifdef CROWD_SAFE_INTEGRATION
+    CS_LOG("DynamoRIO external error at %s(%d): %s\n", file, line, msg);
+    CS_STACKTRACE();
+    notify_process_terminating(true);
+    close_crowd_safe_trace();
+#endif
+
     DO_ONCE({
         /* this syslog is before any core dump, unlike our other reports, but
          * not worth fixing
@@ -1909,6 +1930,17 @@ notify(syslog_event_type_t priority, bool internal, bool synch,
      */
     va_end(ap);
 
+#ifdef CROWD_SAFE_INTEGRATION
+    if (priority == SYSLOG_CRITICAL) {
+        CS_ERR("Critical error: %s\n", msgbuf);
+
+# ifdef WAIT_FOR_DEBUGGER_ON_ERROR
+        CS_LOG("Attempting to wait for a debugger...\n");
+        Sleep(60000);
+# endif
+    }
+#endif
+
     LOG(GLOBAL, LOG_ALL, 1, "%s: %s\n", prefix, msgbuf);
     /* so can skip synchronizing when failure is in option parsing to avoid
      * infinite recursion, still could be issue with exception, but separate
@@ -2224,12 +2256,14 @@ report_dynamorio_problem(dcontext_t *dcontext, uint dumpcore_flag,
      * that grabs locks: hence the fancier callstack in the main report
      * for client and app crashes but not DR crashes.
      */
+#ifndef CROWD_SAFE_INTEGRATION
     DOLOG(1, LOG_ALL, {
         if (dumpcore_flag == DUMPCORE_INTERNAL_EXCEPTION)
             dump_callstack(exception_addr, report_ebp, THREAD, DUMP_NOT_XML);
         else
             dump_dr_callstack(THREAD);
     });
+#endif
 
     report_buf_lock_owner = 0;
     mutex_unlock(&report_buf_lock);

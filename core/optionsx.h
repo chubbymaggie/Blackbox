@@ -722,6 +722,17 @@
     OPTION_DEFAULT_INTERNAL(uint, trace_counter_on_delete, 0U,
         "trace head counter will be reset to this value upon trace deletion")
 
+    OPTION_DEFAULT(uint, bb_analysis_level, 0U,
+        "output control for the bb analysis log")
+    OPTION_DEFAULT(bool, bb_graph, false, "basic block graph")
+    OPTION_DEFAULT(bool, monitor, false, "monitor control flow")
+    OPTION_DEFAULT(pathstring_t, dataset_home, EMPTY_STRING,
+        "path to the target's dataset home directory")
+    OPTION_DEFAULT(bool, netmon, false, "monitor network")
+    OPTION_DEFAULT(bool, xhash, false, "record cross-module hashcodes")
+    OPTION_DEFAULT(bool, wdb_script, false, "windbg script")
+    OPTION_DEFAULT(bool, meta_on_clock, false, "write metadata on clock tick")
+
     OPTION_DEFAULT(uint, max_elide_jmp,  16,
         "maximum direct jumps to elide in a basic block")
     OPTION_DEFAULT(uint, max_elide_call, 16,
@@ -2172,7 +2183,7 @@ IF_RCT_IND_BRANCH(options->rct_ind_jump = OPTION_DISABLED;)
     OPTION_DEFAULT(uint, hook_conflict, 1 /* HOOKED_TRAMPOLINE_SQUASH */, /* case 2525 */
         "action on conflict with existing non Nt* hooks: die, squash or chain")
     OPTION_DEFAULT(uint, native_exec_hook_conflict, 
-        1 /* HOOKED_TRAMPOLINE_SQUASH */,
+        4 /* HOOKED_TRAMPOLINE_OMIT */,
         "action on conflict with existing Nt* hooks: die, squash, or deeper")
     /* NOTE - be careful about using the default value till the options are
      * read */

@@ -52,7 +52,14 @@
  * But if they add new non-subset flags in the future we'd need dynamic dispatch,
  * as earlier Windows versions give access denied on unknown flags!
  */
-#define _WIN32_WINNT _WIN32_WINNT_NT4 /* ==0x0400; NTDDI_VERSION is set from this */
+#ifdef CROWD_SAFE_INTEGRATION
+# define NTDDI_WIN7 0x06010000
+# define _WIN32_WINNT_WIN7 0x0601
+# undef _WIN32_WINNT
+# define _WIN32_WINNT _WIN32_WINNT_WIN7 /* ==0x0400; NTDDI_VERSION is set from this */ // CS-HACK
+#else
+# define _WIN32_WINNT _WIN32_WINNT_NT4 /* ==0x0400; NTDDI_VERSION is set from this */
+#endif
 
 #  define WIN32_LEAN_AND_MEAN
 /* Exclude rarely-used stuff from Windows headers */

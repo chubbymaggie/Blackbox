@@ -581,6 +581,11 @@ privload_load_finalized(privmod_t *mod);
 #ifdef WINDOWS
 bool
 privload_console_share(app_pc priv_kernel32);
+
+IMAGE_EXPORT_DIRECTORY*
+get_module_exports_directory_common(app_pc base_addr,
+                                    size_t *exports_size /* OPTIONAL OUT */
+                                    _IF_NOT_X64(bool ldr64));
 #endif
 
 #endif /* MODULE_LIST_H */

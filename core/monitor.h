@@ -194,8 +194,10 @@ typedef struct _monitor_data_t {
 #endif
 } monitor_data_t;
 
+# if defined(RETURN_AFTER_CALL) || defined(RCT_IND_BRANCH)
 /* PR 204770: use trace component bb tag for RCT source address */
 app_pc
 get_trace_exit_component_tag(dcontext_t *dcontext, fragment_t *f, linkstub_t *l);
+# endif /* defined(RETURN_AFTER_CALL) || defined(RCT_IND_BRANCH) */
 
 #endif /* _MONITOR_H_ */

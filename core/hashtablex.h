@@ -77,10 +77,11 @@
  *     Needs higher rank than memory alloc locks.
  * optional for main table:
  *    bool TAGS_ARE_EQUAL(table, tag1, tag2)
+ *    TAG_TYPE
  *
  * for lookuptable:
  *  if HASHTABLE_USE_LOOKUPTABLE is defined:
- *   ptr_uint_t AUX_ENTRY_TAG(aux_entry)
+ *   TAG_TYPE AUX_ENTRY_TAG(aux_entry)
  *   bool AUX_ENTRY_IS_EMPTY(aux_entry)
  *     empty entry is assumed to be all zeros!
  *   bool AUX_ENTRY_IS_SENTINEL(aux_entry)
@@ -166,6 +167,9 @@
 #ifndef TAGS_ARE_EQUAL
 # define TAGS_ARE_EQUAL(table,t1,t2) ((t1) == (t2))
 #endif
+#ifndef TAG_TYPE
+# define TAG_TYPE ptr_uint_t
+#endif
 
 /****************************************************************************/
 #ifdef HASHTABLEX_HEADER
@@ -179,7 +183,7 @@ typedef struct HTNAME(_,NAME_KEY,_table_t) {
     /* preferred location of a given tag is then at
      * lookuptable[(hash_func(tag) & hash_mask) >> hash_offset] 
      */
-    ptr_uint_t      hash_mask;   /* mask selects the index bits of hash value */
+    TAG_TYPE      hash_mask;   /* mask selects the index bits of hash value */
 #ifdef HASHTABLE_USE_LOOKUPTABLE 
     AUX_ENTRY_TYPE *lookuptable; /* allocation aligned within lookuptable_unaligned */
 #endif
@@ -706,12 +710,12 @@ HTNAME(hashtable_,NAME_KEY,_check_consistency)(dcontext_t *dcontext,
  */
 /* CHECK this routine is partially specialized, otherwise turn it into a macro */
 static /* want to inline but > limit in fragment_lookup */ ENTRY_TYPE
-HTNAME(hashtable_,NAME_KEY,_lookup)(dcontext_t *dcontext, ptr_uint_t tag,
+HTNAME(hashtable_,NAME_KEY,_lookup)(dcontext_t *dcontext, TAG_TYPE tag,
                                     HTNAME(,NAME_KEY,_table_t) *htable)
 {
     ENTRY_TYPE e;
-    ptr_uint_t ftag;
-    uint hindex = HASH_FUNC(tag, htable);
+    TAG_TYPE ftag;
+    uint hindex = HASH_FUNC((ptr_uint_t)tag, htable);
 #ifdef HASHTABLE_STATISTICS
     uint collision_len = 0;
 #endif
@@ -768,7 +772,7 @@ HTNAME(hashtable_,NAME_KEY,_lookup)(dcontext_t *dcontext, ptr_uint_t tag,
 
 /* Convenience routine that grabs the read lock and does a lookup */
 static inline ENTRY_TYPE
-HTNAME(hashtable_,NAME_KEY,_rlookup)(dcontext_t *dcontext, ptr_uint_t tag,
+HTNAME(hashtable_,NAME_KEY,_rlookup)(dcontext_t *dcontext, TAG_TYPE tag,
                                      HTNAME(,NAME_KEY,_table_t) *htable)
 {
     ENTRY_TYPE e;
@@ -797,10 +801,12 @@ HTNAME(hashtable_,NAME_KEY,_add)(dcontext_t *dcontext, ENTRY_TYPE e,
     if (TEST(HASHTABLE_READ_ONLY, table->table_flags))
         return false;
 
+#ifndef ALLOW_DUPLICATE_ENTRIES
     /* ensure higher-level synch not allowing any races between lookup and add */
     /* Shared fragment IBTs: Tolerate unlinked markers. */
     ASSERT(!ENTRY_IS_REAL(HTNAME(hashtable_,NAME_KEY,_lookup)
                           (dcontext, ENTRY_TAG(e), table)));
+#endif
 
     /* check_table_size increments table->entries for us and ensures
      * we have enough space.  don't grab any properties of table prior to this
@@ -808,7 +814,7 @@ HTNAME(hashtable_,NAME_KEY,_add)(dcontext_t *dcontext, ENTRY_TYPE e,
      */
     resized = !HTNAME(hashtable_,NAME_KEY,_check_size)(dcontext, table, 1, 0);
 
-    hindex = HASH_FUNC(ENTRY_TAG(e), table);
+    hindex = HASH_FUNC((ptr_uint_t)ENTRY_TAG(e), table);
     /* find an empty null slot */
     do {
         LOG(THREAD_GET, LOG_HTABLE, 4,
@@ -1231,7 +1237,7 @@ HTNAME(hashtable_,NAME_KEY,_lookup_for_removal)(ENTRY_TYPE fr,
                                                 HTNAME(,NAME_KEY,_table_t) *htable,
                                                 uint *rhindex)
 {
-    uint hindex = HASH_FUNC(ENTRY_TAG(fr), htable);
+    uint hindex = HASH_FUNC((ptr_uint_t)ENTRY_TAG(fr), htable);
     ENTRY_TYPE *pg = &htable->table[hindex];
     while (!ENTRY_IS_EMPTY(*pg)) {
         if (ENTRIES_ARE_EQUAL(htable, fr, *pg)) {
@@ -1310,7 +1316,7 @@ HTNAME(hashtable_,NAME_KEY,_remove_helper_open_address)
             if (ENTRY_IS_EMPTY(htable->table[hindex])) 
                 return wrapped;
 
-            preferred = HASH_FUNC(ENTRY_TAG(htable->table[hindex]), htable);
+            preferred = HASH_FUNC((ptr_uint_t)ENTRY_TAG(htable->table[hindex]), htable);
 
             /* Verify if it will be lost if we leave a hole behind its preferred address */
             /* [preferred] <= [hole] < [hindex]  : BAD */
@@ -1445,8 +1451,10 @@ void
 HTNAME(hashtable_,NAME_KEY,_clear)(dcontext_t *dcontext,
                                    HTNAME(,NAME_KEY,_table_t) *table)
 {
+#ifndef FAST_CLEAR
     uint i;
     ENTRY_TYPE e;
+#endif
 
     ASSERT(!TEST(HASHTABLE_READ_ONLY, table->table_flags));
     if (TEST(HASHTABLE_READ_ONLY, table->table_flags))
@@ -1456,6 +1464,9 @@ HTNAME(hashtable_,NAME_KEY,_clear)(dcontext_t *dcontext,
         HTNAME(hashtable_,NAME_KEY,_load_statistics)(dcontext, table);
     });
 
+#ifdef FAST_CLEAR
+    memset(table->table, ENTRY_EMPTY, table->capacity * sizeof(ENTRY_TYPE));
+#else
     for (i = 0; i < table->capacity; i++) {
         e = table->table[i];
         /* must check for sentinel */
@@ -1464,6 +1475,7 @@ HTNAME(hashtable_,NAME_KEY,_clear)(dcontext_t *dcontext,
         }
         table->table[i] = ENTRY_EMPTY;
     }
+#endif
 #ifdef HASHTABLE_USE_LOOKUPTABLE
     memset(table->lookuptable, 0, table->capacity*sizeof(AUX_ENTRY_TYPE));
 #endif
@@ -1493,7 +1505,7 @@ HTNAME(hashtable_,NAME_KEY,_clear)(dcontext_t *dcontext,
 static uint
 HTNAME(hashtable_,NAME_KEY,_range_remove)(dcontext_t *dcontext,
                                           HTNAME(,NAME_KEY,_table_t) *table,
-                                          ptr_uint_t tag_start, ptr_uint_t tag_end,
+                                          TAG_TYPE tag_start, TAG_TYPE tag_end,
                                           bool (*filter)(ENTRY_TYPE e))
 {
     int i;
@@ -1597,6 +1609,7 @@ HTNAME(hashtable_,NAME_KEY,_unlinked_remove)(dcontext_t *dcontext,
             i--;
         }
     }
+#ifndef HASHTABLE_FAUX_REMOVE_UNLINKED
     /* fragment_remove_fragment_helper decrements table->entries but we
      * want only unlinked_entries decremented, so adjust entries. */
     table->entries += entries_removed;
@@ -1627,6 +1640,7 @@ HTNAME(hashtable_,NAME_KEY,_unlinked_remove)(dcontext_t *dcontext,
     DODEBUG({
         HTNAME(hashtable_,NAME_KEY,_study)(dcontext, table, 0/*table consistent*/);
     });
+#endif
     return entries_removed;
 }
 
@@ -2251,6 +2265,7 @@ HTNAME(hashtable_,NAME_KEY,_resurrect)(dcontext_t *dcontext, byte *mapped_table
  * user must re-specify name and types for struct and impl, though
  */
 #undef NAME_KEY
+#undef TAG_TYPE
 #undef ENTRY_TYPE
 #undef AUX_ENTRY_TYPE
 #undef CUSTOM_FIELDS
@@ -2280,6 +2295,10 @@ HTNAME(hashtable_,NAME_KEY,_resurrect)(dcontext_t *dcontext, byte *mapped_table
 #undef HASHTABLE_ENTRY_STATS
 #undef HASHTABLE_SUPPORT_PERSISTENCE
 #undef HTLOCK_RANK
+
+#undef ALLOW_DUPLICATE_ENTRIES
+#undef HASHTABLE_FAUX_REMOVE_UNLINKED
+#undef FAST_CLEAR
 
 #undef _IFLOOKUP
 #undef IFLOOKUP_ELSE

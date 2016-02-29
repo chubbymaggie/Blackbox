@@ -48,6 +48,9 @@ void
 dispatch(dcontext_t *dcontext);
 
 void
+enter_fcache(dcontext_t *dcontext, fcache_enter_func_t entry, cache_pc pc);
+
+void
 issue_last_system_call_from_app(dcontext_t *dcontext);
 
 void

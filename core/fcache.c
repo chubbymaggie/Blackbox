@@ -54,6 +54,11 @@
 #include "synch.h"
 #include "x86/instrument.h"
 
+#include "../ext/link-observer/crowd_safe_util.h"
+#ifdef CROWD_SAFE_INTEGRATION
+# include "../ext/link-observer/basic_block_observer.h"
+#endif
+
 /* A code cache is made up of multiple separate mmapped units
  * We grow a unit by resizing, shifting, and relinking, up to a maximum size,
  * at which point we create a separate unit if we need more space
@@ -4113,6 +4118,8 @@ fcache_reset_all_caches_proactively(uint target)
         "\nfcache_reset_all_caches_proactively: thread %d suspending all threads\n",
         get_thread_id());
 
+    CS_LOG("Synching for cache reset\n");
+
     /* Suspend all DR-controlled threads at safe locations.
      * Case 6821: other synch-all-thread uses can be ignored, as none of them carry
      * any non-persistent state.
@@ -4143,6 +4150,10 @@ fcache_reset_all_caches_proactively(uint target)
         SYSLOG_INTERNAL_WARNING("proactive reset aborted due to thread synch failure");
         return;
     }
+
+#ifdef CROWD_SAFE_INTEGRATION
+    notify_cache_reset(my_dcontext);
+#endif
 
     /* now we own the thread_initexit_lock */
     ASSERT(OWN_MUTEX(&all_threads_synch_lock) && OWN_MUTEX(&thread_initexit_lock));
@@ -4233,6 +4244,9 @@ fcache_reset_all_caches_proactively(uint target)
                 vm_areas_thread_reset_free(dcontext);
                 /* now we throw out all non-persistent private heap units */
                 heap_thread_reset_free(dcontext);
+#ifdef CROWD_SAFE_INTEGRATION
+                crowd_safe_thread_reset(dcontext);
+#endif
             }
         }
     }

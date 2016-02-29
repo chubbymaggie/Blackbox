@@ -1517,7 +1517,8 @@ static void
 callstack_dump_module_info(char *buf, size_t bufsz, size_t *sofar,
                            app_pc pc, uint flags)
 {
-    if (TEST(CALLSTACK_MODULE_INFO, flags)) {
+    extern vm_area_vector_t *loaded_module_areas;
+    if (TEST(CALLSTACK_MODULE_INFO, flags) && (loaded_module_areas != NULL)) {
         module_area_t *ma;
         os_get_module_info_lock();
         ma = module_pc_lookup(pc);
@@ -1603,6 +1604,7 @@ internal_dump_callstack(app_pc cur_pc, app_pc ebp, file_t outfile, bool dump_xml
                                       cur_pc, ebp,
                                       CALLSTACK_ADD_HEADER |
                                       CALLSTACK_FRAME_PTR |
+                                      CALLSTACK_MODULE_INFO |
                                       (dump_xml ? CALLSTACK_USE_XML : 0));
     print_file(outfile, "%s", buf);
 }

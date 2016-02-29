@@ -49,7 +49,7 @@ string(REGEX MATCH "following dependencies:.*Summary" dlls "${deps_out}")
 string(REGEX REPLACE "\r?\n" "" dlls "${dlls}")
 string(REGEX REPLACE "following dependencies: *" "" dlls "${dlls}")
 string(REGEX REPLACE " *Summary" "" dlls "${dlls}")
-if (NOT dlls MATCHES "^ntdll.dll$")
+if ((NOT dlls MATCHES "dbghelp.dll") AND (NOT dlls MATCHES "ntdll.dll"))
   message(FATAL_ERROR "*** Error: ${lib} depends on more than ntdll.dll: ${dlls}")
 endif ()
 

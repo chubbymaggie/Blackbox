@@ -415,6 +415,33 @@ typedef enum _EVENT_TYPE {
     SynchronizationEvent /* automatically changes state to non-signaled after releasing a waiting thread */
 } EVENT_TYPE, *PEVENT_TYPE;
 
+typedef enum _IoControlCode {
+    AFD_BIND = 0x12003,
+    AFD_CONNECT = 0x12007,
+    AFD_QUERY_SOCKET = 0x1200c,
+    AFD_PIPE_SOCKET = 0x12010,
+    AFD_RECV = 0x12017,
+    AFD_UDP_RECV = 0x1201b,
+    AFD_SEND = 0x1201f,
+    AFD_UDP_SEND = 0x12023,
+    AFD_SELECT = 0x12024,
+    AFD_CONNECT2 = 0x1203f,
+    AFD_SET_CONTEXT = 0x12047,
+    AFD_ICMP = 0x120013
+} IoControlCode;
+
+typedef struct _AFD_WSABUF {
+    UINT len;
+    PCHAR buf;
+} AFD_WSABUF , *PAFD_WSABUF; 
+
+typedef struct _AFD_RECV_INFO {
+    PAFD_WSABUF BufferArray;
+    ULONG BufferCount;
+    ULONG AfdFlags;
+    ULONG TdiFlags;
+} AFD_RECV_INFO , *PAFD_RECV_INFO;
+
 /* we don't actually use this but for cleanliness sake, is from ntddk.h */
 typedef 
 VOID
