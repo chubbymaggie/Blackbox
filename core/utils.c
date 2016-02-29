@@ -1926,11 +1926,11 @@ notify(syslog_event_type_t priority, bool internal, bool synch,
 
 #ifdef SECURITY_AUDIT
     if (priority == SYSLOG_CRITICAL) {
-        CS_ERR("Critical error: %s\n", msgbuf);
+        SEC_LOG(1, "Critical error: %s\n", msgbuf);
 
 /*
 # ifdef WAIT_FOR_DEBUGGER_ON_ERROR
-        CS_LOG("Attempting to wait for a debugger...\n");
+        SEC_LOG(3, "Attempting to wait for a debugger...\n");
         Sleep(60000);
 # endif
 */

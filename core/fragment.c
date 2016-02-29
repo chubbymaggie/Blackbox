@@ -6010,7 +6010,7 @@ flush_fragments_synchall_start(dcontext_t *ignored, app_pc base, size_t size,
         "\nflush_fragments_synchall_start: thread %d suspending all threads\n",
         get_thread_id());
 
-    CS_LOG("Synching to flush frags\n");
+    SEC_LOG(3, "Synching to flush frags\n");
 
     STATS_INC(flush_synchall);
     /* suspend all DR-controlled threads at safe locations */

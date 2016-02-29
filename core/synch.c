@@ -1100,7 +1100,7 @@ synch_with_all_threads(thread_synch_state_t desired_synch_state,
     bool finished_non_client_threads;
 #endif
 
-    CS_LOG("Synch with all threads requested: state %d -> %d\n", cur_state, desired_synch_state);
+    SEC_LOG(3, "Synch with all threads requested: state %d -> %d\n", cur_state, desired_synch_state);
 
     ASSERT(!dynamo_all_threads_synched);
     /* flag any caller who does not give up enough permissions to avoid livelock

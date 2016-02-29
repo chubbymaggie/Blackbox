@@ -4533,7 +4533,7 @@ check_syscall_method(dcontext_t *dcontext, instr_t *instr)
 #else
     /* we assume only single method; else need multiple do_syscalls */
     if (new_method != get_syscall_method()) {
-        CS_ERR("Error: established syscall method is %d, but instruction with opcode %d implies method %d\n",
+        SEC_LOG(1, "Error: established syscall method is %d, but instruction with opcode %d implies method %d\n",
                get_syscall_method(), instr->opcode, new_method);
     }
     ASSERT(new_method == get_syscall_method());

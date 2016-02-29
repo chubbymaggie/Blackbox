@@ -5238,7 +5238,7 @@ insert_restore_spilled_xcx(dcontext_t *dcontext, instrlist_t *trace, instr_t *ne
             if (ibp_is_return) {
                 added_size += audit_return(dcontext, trace, restore, tag);
 
-                CS_DET("<ret> fixup_last_cti instrumenting inline return in "PX"\n", ibp_from_tag);
+                SEC_LOG(4, "<ret> fixup_last_cti instrumenting inline return in "PX"\n", ibp_from_tag);
             }
 #endif
         }
@@ -6135,7 +6135,7 @@ extend_trace(dcontext_t *dcontext, fragment_t *f, linkstub_t *prev_l, bool ibp_i
 
     LOG(THREAD, LOG_MONITOR, 4,
         "\tadding block %d == "PFX"\n", md->num_blks, f->tag);
-    CS_DET("Extend trace "PX" with BB "PX"\n", md->trace_tag, f->tag);
+    SEC_LOG(4, "Extend trace "PX" with BB "PX"\n", md->trace_tag, f->tag);
 
     size = md->trace_buf_size - md->trace_buf_top;
     LOG(THREAD, LOG_MONITOR, 4, "decoding F%d into trace buf @"PFX" + 0x%x = "PFX"\n",

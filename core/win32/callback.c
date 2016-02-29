@@ -2493,7 +2493,7 @@ intercept_syscall_wrapper(byte **ptgt_pc /* IN/OUT */,
 
     pc = interception_cur_pc; /* current spot in interception buffer */
 
-    CS_LOG("syscall intercept at "PX"\n", pc);
+    SEC_LOG(3, "syscall intercept at "PX"\n", pc);
 
     /* copy original 5 bytes to ease unhooking, we won't execute this */
     *orig_bytes_pc = pc;
@@ -4014,7 +4014,7 @@ found_modified_code(dcontext_t *dcontext, EXCEPTION_RECORD *pExcptRec,
             next_pc = handle_modified_code(dcontext, instr_cache_pc, translated_pc, target, f);
 #ifdef SECURITY_AUDIT
             if (next_pc != NULL) {
-                CS_DET("Code modification trap: code at "PX" written by "PX". Resuming at "PX" on thread 0x%x\n",
+                SEC_LOG(4, "Code modification trap: code at "PX" written by "PX". Resuming at "PX" on thread 0x%x\n",
                     target, f->tag, next_pc, current_thread_id());
 
                 audit_code_modification(dcontext, f, next_pc, target, write_size);
@@ -5237,7 +5237,7 @@ intercept_exception(app_state_at_intercept_t *state)
             DODEBUG({ known_source = true; });
         }
 
-        CS_DET("Handling app exception at "PX" on thread 0x%x\n",
+        SEC_LOG(4, "Handling app exception at "PX" on thread 0x%x\n",
                pExcptRec->ExceptionAddress, current_thread_id());
 
         check_internal_exception(dcontext, cxt, pExcptRec, forged_exception_addr
@@ -5587,7 +5587,7 @@ intercept_exception(app_state_at_intercept_t *state)
         state->callee_arg = (void *) false /* use cur dcontext */;
         asynch_take_over(state);
     } else {
-        CS_DET("Ignoring app exception\n");
+        SEC_LOG(4, "Ignoring app exception\n");
         STATS_INC(num_exceptions_noasynch);
     }
     return AFTER_INTERCEPT_LET_GO;
@@ -6962,7 +6962,7 @@ intercept_image_entry(app_state_at_intercept_t *state)
                  * again.
                  */
 
-                CS_LOG("Flush: intercept_image_entry()\n");
+                SEC_LOG(3, "Flush: intercept_image_entry()\n");
 
                 /* note we only flush, but not remove region, since we will not rewalk */
                 flush_fragments_in_region_start(existing_dcontext,

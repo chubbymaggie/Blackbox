@@ -638,7 +638,7 @@ vm_make_writable(byte *pc, size_t size)
     ASSERT(ok);
     ASSERT(INTERNAL_OPTION(cache_consistency));
 
-    CS_DET("W+X| vm_make_writable: "PX" +0x%x\n", pc, size);
+    SEC_LOG(4, "W+X| vm_make_writable: "PX" +0x%x\n", pc, size);
 }
 
 static void
@@ -649,7 +649,7 @@ vm_make_unwritable(byte *pc, size_t size)
     ASSERT(INTERNAL_OPTION(cache_consistency));
     make_unwritable(start_pc, final_size);
 
-    CS_DET("W+X| vm_make_unwritable: "PX" +0x%x\n", pc, size);
+    SEC_LOG(4, "W+X| vm_make_unwritable: "PX" +0x%x\n", pc, size);
 
     /* case 8308: We should never call vm_make_unwritable if
      * -sandbox_writable is on, or if -sandbox_non_text is on and this
@@ -918,7 +918,7 @@ add_vm_area_unit(vm_area_vector_t *v, app_pc start, app_pc end,
 
     ASSERT(start < end);
 
-    CS_DET("add_vm_area_unit: %s "PX"-"PX" (vm 0x%x) (frag 0x%x)\n",
+    SEC_LOG(4, "add_vm_area_unit: %s "PX"-"PX" (vm 0x%x) (frag 0x%x)\n",
            name_vm_area(v), start, end, vm_flags, frag_flags);
 
     ASSERT_VMAREA_VECTOR_PROTECTED(v, WRITE);
@@ -1166,9 +1166,9 @@ add_vm_area_unit(vm_area_vector_t *v, app_pc start, app_pc end,
 
 #ifdef SECURITY_AUDIT
         if (v == executable_areas) {
-            CS_DET("New executable vmarea: "PX"-"PX"\n", start, end);
+            SEC_LOG(4, "New executable vmarea: "PX"-"PX"\n", start, end);
         } else if (v == dynamo_areas) {
-            CS_DET("New dynamo vmarea: "PX"-"PX"\n", start, end);
+            SEC_LOG(4, "New dynamo vmarea: "PX"-"PX"\n", start, end);
         }
 #endif
 
@@ -1365,12 +1365,12 @@ remove_vm_area(vm_area_vector_t *v, app_pc start, app_pc end, bool restore_prot)
     bool official_coarse_vector = (v == executable_areas);
 
 #ifdef SECURITY_AUDIT
-    CS_DET("remove_vm_area: %s "PX"-"PX"\n", name_vm_area(v), start, end);
+    SEC_LOG(4, "remove_vm_area: %s "PX"-"PX"\n", name_vm_area(v), start, end);
 
     if (v == executable_areas)
-        CS_DET("Removing executable vmarea: "PX"-"PX"\n", start, end);
+        SEC_LOG(4, "Removing executable vmarea: "PX"-"PX"\n", start, end);
     else if (v == dynamo_areas)
-        CS_DET("Removing dynamo vmarea: "PX"-"PX"\n", start, end);
+        SEC_LOG(4, "Removing dynamo vmarea: "PX"-"PX"\n", start, end);
 #endif
 
     ASSERT_VMAREA_VECTOR_PROTECTED(v, WRITE);
@@ -7056,16 +7056,16 @@ app_memory_protection_change(dcontext_t *dcontext, app_pc base, size_t size,
             bool has_been_executable = TEST(MEMPROT_EXEC, *old_memprot);
             bool will_be_executable = TEST(MEMPROT_EXEC, prot);
 
-            CS_DET("DMP| Permission change on: "PX" +0x%x; contained by %s\n",
+            SEC_LOG(4, "DMP| Permission change on: "PX" +0x%x; contained by %s\n",
                 base, size, containing_module->module_name);
 
             if (will_be_executable && !has_been_executable) {
-                CS_DET("DMP| Memory becomes executable: "PX" +0x%x; contained by %s, stack modules:\n",
+                SEC_LOG(4, "DMP| Memory becomes executable: "PX" +0x%x; contained by %s, stack modules:\n",
                     base, size, containing_module->module_name);
 
                 audit_memory_executable_change(dcontext, base, size, true/*+x*/, true/*safe to read*/);
             } else if (has_been_executable && !will_be_executable) {
-                CS_DET("DMP| Memory becomes non-executable: "PX" +0x%x\n", base, size);
+                SEC_LOG(4, "DMP| Memory becomes non-executable: "PX" +0x%x\n", base, size);
 
                 audit_memory_executable_change(dcontext, base, size, false/*-x*/, false/*safe to read*/);
             }

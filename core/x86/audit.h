@@ -33,7 +33,7 @@
 #ifndef _AUDIT_H_
 #define _AUDIT_H_ 1
 
-#ifdef SECURITY_AUDIT /* around whole file */
+#ifdef SECURITY_AUDIT
 
 #include "../globals.h"
 #include "instr.h"
@@ -41,6 +41,12 @@
 #ifdef WINDOWS
 # include "../win32/ntdll_types.h"
 #endif
+
+#define SEC_LOG(level, ...) \
+do { \
+    if (audit_callbacks->loglevel >= level) \
+        drfprintf(*audit_callbacks->audit_log_file, __VA_ARGS__); \
+} while (0)
 
 /* DR_API EXPORT TOFILE dr_audit.h */
 /* DR_API EXPORT BEGIN */
@@ -50,6 +56,8 @@
  */
 
 typedef struct _audit_callbacks_t {
+    file_t *audit_log_file;
+    uint log_level;
     void (*audit_init)(dcontext_t *dcontext, bool is_fork);
     void (*audit_exit)();
     void (*audit_init_log)(bool is_fork);
@@ -446,6 +454,8 @@ audit_noop()
 {
 }
 
+#else /* SECURITY_AUDIT */
+# define SEC_LOG(level, ...)
 #endif /* SECURITY_AUDIT */
 
 #endif

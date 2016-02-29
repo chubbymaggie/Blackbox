@@ -1451,7 +1451,7 @@ presys_TerminateProcess(dcontext_t *dcontext, reg_t *param_base)
         copy_mcontext(mc, &mcontext);
         mc->pc = SYSCALL_PC(dcontext);
 
-        CS_LOG("presys_TerminateProcess\n");
+        SEC_LOG(3, "presys_TerminateProcess\n");
 
 #ifdef CLIENT_INTERFACE
         /* make sure client nudges are finished */
@@ -2483,7 +2483,7 @@ pre_system_call(dcontext_t *dcontext)
 
 #ifdef SECURITY_AUDIT
     audit_heartbeat(dcontext);
-    CS_DET("Syscall %d\n", sysnum);
+    SEC_LOG(4, "Syscall %d\n", sysnum);
 #endif
 
     /* save key register values for post_system_call (they get clobbered
@@ -3115,7 +3115,7 @@ postsys_AllocateVirtualMemory(dcontext_t *dcontext, reg_t *param_base, bool succ
 
 #ifdef SECURITY_AUDIT
     if ((base > PC(0)) && prot_is_executable(prot)) {
-        CS_DET("DMP| Executable memory allocation: "PX" +0x%x\n", base, size);
+        SEC_LOG(4, "DMP| Executable memory allocation: "PX" +0x%x\n", base, size);
 
         audit_memory_executable_change(dcontext, base, size, true/*+x*/,
                                        is_phandle_me(process_handle)/*safe to read*/);
@@ -3815,7 +3815,7 @@ postsys_CreateIoCompletion(dcontext_t *dcontext, reg_t *param_base, bool success
         POBJECT_ATTRIBUTES *attributes = (POBJECT_ATTRIBUTES *) postsys_param(dcontext,
                                                                               param_base, 2);
         uint max_threads = (uint) postsys_param(dcontext, param_base, 3);
-        CS_DET("CreateIoCompletion: 0x%x, 0x%x, "PX", 0x%x\n", completion_handle,
+        SEC_LOG(4, "CreateIoCompletion: 0x%x, 0x%x, "PX", 0x%x\n", completion_handle,
                access, attributes, max_threads);
     }
 }
@@ -3835,7 +3835,7 @@ postsys_SetIoCompletion(dcontext_t *dcontext, reg_t *param_base, bool success)
         void *completion_context = (void *) postsys_param(dcontext, param_base, 2);
         NTSTATUS status = (NTSTATUS) postsys_param(dcontext, param_base, 3);
         uint completion_info = (uint) postsys_param(dcontext, param_base, 4);
-        CS_DET("SetIoCompletion: 0x%x, 0x%x, "PX", 0x%x, 0x%x\n", completion_handle,
+        SEC_LOG(4, "SetIoCompletion: 0x%x, 0x%x, "PX", 0x%x, 0x%x\n", completion_handle,
                completion_key, completion_context, status, completion_info);
     }
 }
@@ -3854,7 +3854,7 @@ postsys_RemoveIoCompletion(dcontext_t *dcontext, reg_t *param_base, bool success
         uint completion_key = *(uint *) postsys_param(dcontext, param_base, 1);
         uint completion_value = *(uint *) postsys_param(dcontext, param_base, 2);
         IO_STATUS_BLOCK *status_block = (IO_STATUS_BLOCK *) postsys_param(dcontext, param_base, 3);
-        CS_DET("RemoveIoCompletion: 0x%x, 0x%x, 0x%x, "PX"\n",
+        SEC_LOG(4, "RemoveIoCompletion: 0x%x, 0x%x, 0x%x, "PX"\n",
                completion_handle, completion_key, completion_value, status_block);
     }
 }
@@ -3874,7 +3874,7 @@ postsys_CreateFile(dcontext_t *dcontext, reg_t *param_base, bool success)
         uint create_options = (uint) postsys_param(dcontext, param_base, 8);
         char *ea_buffer = (char *) postsys_param(dcontext, param_base, 9);
         uint ea_length = (uint) postsys_param(dcontext, param_base, 10);
-        //CS_LOG("CreateFile: 0x%x, 0x%x, "PX", "PX", 0x%x, 0x%x, 0x%x, 0x%x, "PX", 0x%x\n",
+        //SEC_LOG(3, "CreateFile: 0x%x, 0x%x, "PX", "PX", 0x%x, 0x%x, 0x%x, 0x%x, "PX", 0x%x\n",
         //    handle, access, attributes, status_block, file_attributes, share_access,
         //    create_disposition, create_options, ea_buffer, ea_length);
 
@@ -3883,7 +3883,7 @@ postsys_CreateFile(dcontext_t *dcontext, reg_t *param_base, bool success)
             if (strcmp(handle_type, "AfdOpenPacketXX") == 0)
                 audit_socket_handle(dcontext, handle, true/*created*/);
             else
-                CS_LOG("CreateFile of type '%s'\n", handle_type);
+                SEC_LOG(3, "CreateFile of type '%s'\n", handle_type);
         }
     }
 }

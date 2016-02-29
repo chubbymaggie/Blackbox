@@ -1153,7 +1153,7 @@ synch_with_threads_at_exit(thread_synch_state_t synch_res)
     wait_for_outstanding_nudges();
 #endif
 
-    CS_LOG("Synch all threads for exit\n");
+    SEC_LOG(3, "Synch all threads for exit\n");
 
     /* xref case 8747, requesting suspended is preferable to terminated and it
      * doesn't make a difference here which we use (since the process is about
@@ -1248,7 +1248,7 @@ dynamo_process_exit_cleanup(void)
          * but it will only global log and do thread_lookup which should be
          * safe throughout) */
 
-        CS_LOG("Exit pre-client\n");
+        SEC_LOG(3, "Exit pre-client\n");
 
         /* In order to pass the client a dcontext in the process exit event
          * we do some thread cleanup early for the final thread so we can delay
@@ -1274,7 +1274,7 @@ dynamo_process_exit_cleanup(void)
         unhook_vsyscall();
 #endif /* UNIX */
 
-        CS_LOG("Shared exit\n");
+        SEC_LOG(3, "Shared exit\n");
 
         return dynamo_shared_exit(IF_WINDOWS_(NULL) /* not detaching */
                                   IF_WINDOWS(false /* not detaching */));
@@ -1313,7 +1313,7 @@ dynamo_process_exit(void)
     bool each_thread;
 #endif
 
-    CS_LOG("Process exit\n");
+    SEC_LOG(3, "Process exit\n");
 
     SELF_UNPROTECT_DATASEC(DATASEC_RARELY_PROT);
     synchronize_dynamic_options();

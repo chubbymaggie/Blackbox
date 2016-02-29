@@ -52,10 +52,8 @@
 #include <limits.h> /* for UCHAR_MAX */
 #include "perscache.h"
 #include "synch.h"
-#include "x86/instrument.h"
-#ifdef SECURITY_AUDIT
-# include "audit.h"
-#endif
+#include "instrument.h"
+#include "audit.h"
 
 /* A code cache is made up of multiple separate mmapped units
  * We grow a unit by resizing, shifting, and relinking, up to a maximum size,
@@ -4116,7 +4114,7 @@ fcache_reset_all_caches_proactively(uint target)
         "\nfcache_reset_all_caches_proactively: thread %d suspending all threads\n",
         get_thread_id());
 
-    CS_LOG("Synching for cache reset\n");
+    SEC_LOG(3, "Synching for cache reset\n");
 
     /* Suspend all DR-controlled threads at safe locations.
      * Case 6821: other synch-all-thread uses can be ignored, as none of them carry

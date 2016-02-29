@@ -4001,13 +4001,13 @@ process_mmap(dcontext_t *dcontext, app_pc pc, size_t size, bool add, const char 
 #ifdef SECURITY_AUDIT
     if ((mbi.BaseAddress > PC(0)) && prot_is_executable(mbi.Protect) && !image) {
         if (add) {
-            CS_DET("DMP| Adding executable memory region: "PX" +0x%x\n",
+            SEC_LOG(4, "DMP| Adding executable memory region: "PX" +0x%x\n",
                    mbi.BaseAddress, mbi.RegionSize);
 
             audit_memory_executable_change(dcontext, mbi.BaseAddress, mbi.RegionSize,
                                            true/*+x*/, true/*safe to read*/);
         } else {
-            CS_DET("DMP| Removing executable memory region: "PX" +0x%x\n",
+            SEC_LOG(4, "DMP| Removing executable memory region: "PX" +0x%x\n",
                    mbi.BaseAddress, mbi.RegionSize);
 
             audit_memory_executable_change(dcontext, mbi.BaseAddress, mbi.RegionSize,
@@ -7493,7 +7493,7 @@ detach_helper(int detach_type)
     CONTEXT *cxt;
     DEBUG_DECLARE(bool ok;)
 
-    CS_LOG("detach!\n");
+    SEC_LOG(3, "detach!\n");
 
     /* Caller (generic_nudge_handler) should have already checked these and
      * verified the nudge is valid. */

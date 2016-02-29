@@ -15,7 +15,7 @@
 static void
 audit_dispatch(dcontext_t *dcontext)
 {
-    call_all(dispatch_callbacks, void (*)(dcontext_t), dcontext);
+    crowd_safe_dispatch(dcontext);
 }
 
 static inline void
@@ -376,6 +376,8 @@ event_exit(void)
 }
 
 static audit_callbacks_t callbacks = {
+    INVALID_FILE,
+    &cs_log_file,
     audit_init,
     audit_exit,
     audit_init_log,

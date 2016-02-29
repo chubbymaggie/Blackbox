@@ -497,8 +497,8 @@ thcounter_resize(dcontext_t *dcontext, trace_head_table_t *t)
     COUNTER_FREE(dcontext, old_counter_table, old_capacity*sizeof(trace_head_counter_t*)
                  HEAPACCT(ACCT_THCOUNTER));
 
-    CS_NOLOCK_LOG("Trace head table resized to capacity 0x%x on dc "PFX"\n",
-                  t->capacity, dcontext);
+    SEC_LOG(3, "Trace head table resized to capacity 0x%x on dc "PFX"\n",
+           t->capacity, dcontext);
 }
 
 static trace_head_counter_t *
@@ -818,7 +818,7 @@ mark_trace_head(dcontext_t *dcontext_in, fragment_t *f, fragment_t *src_f,
         (dcontext_in == GLOBAL_DCONTEXT) ? get_thread_private_dcontext() : dcontext_in;
     ASSERT(dcontext != NULL);
 
-    CS_DET("Marking "PX" as trace head\n", f->tag);
+    SEC_LOG(4, "Marking "PX" as trace head\n", f->tag);
     LOG(THREAD, LOG_MONITOR, 4, "marking F%d ("PFX") as trace head\n", f->id, f->tag);
     ASSERT(!TEST(FRAG_IS_TRACE, f->flags));
     ASSERT(!NEED_SHARED_LOCK(f->flags) ||
