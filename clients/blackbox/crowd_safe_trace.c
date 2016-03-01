@@ -423,7 +423,7 @@ notify_code_modification(dcontext_t *dcontext, dr_fragment_t *exception_f, app_p
         bb_state_t *resume_state = get_bb_state(resume_tag);
         if ((resume_state == NULL) || !IS_BB_EXCEPTION(resume_state)) {
             bb_state_t *exception_block_state = get_bb_state(exception_f->tag);
-            byte exit_ordinal = count_ordinals(exception_f);
+            byte exit_ordinal = dr_fragment_count_ordinals(exception_f);
             if ((resume_state != NULL) && IS_BB_LIVE(resume_state)) {
                 write_graph_edge(dcontext, exception_f->tag, resume_tag, exception_block_state, resume_state,
                     module, module, exit_ordinal, exception_continuation_edge);
@@ -611,6 +611,7 @@ commit_incoming_edges(dcontext_t *dcontext, crowd_safe_thread_local_t *cstl, app
     */
 }
 
+// cs-todo: could maybe lookup the ordinal in the core and skip this separate path
 void
 notify_incoming_link(dcontext_t *dcontext, app_pc from, app_pc to) {
     crowd_safe_thread_local_t *cstl = GET_CSTL(dcontext);
@@ -713,7 +714,7 @@ notify_basic_block_linking_complete(dcontext_t *dcontext, app_pc tag) {
                        "Clobbered black box hash 0x%llx\n", tag, state->tag_version,
                        state->hash, current_thread_id(), GET_CLOBBERED_BLACK_BOX_HASH(cstl));
 
-                dr_log_last_exit(dcontext, "\t", 3);
+                DODEBUG({ dr_log_last_exit(dcontext, tag, "\t", 3); });
             }
         }
     }

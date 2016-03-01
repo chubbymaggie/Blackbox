@@ -1,6 +1,7 @@
 #ifndef CROWD_SAFE_GENCODE_H
 #define CROWD_SAFE_GENCODE_H 1
 
+#include "dr_api.h"
 //#include "../../core/globals.h"
 //#include "../../core/x86/arch.h"
 
@@ -73,7 +74,8 @@ append_indirect_link_notification_hook(dcontext_t *dcontext,
  *       c. flag TLS_IBP_IS_NEW */
 void
 append_indirect_link_notification(dcontext_t *dcontext, instrlist_t *ilist,
-    ibl_code_t *ibl_code, instr_t *fragment_not_found);
+                                  app_pc indirect_branch_lookup_routine,
+                                  instr_t *fragment_not_found);
 
 /* Called by DR each time it emits an instruction into the code cache. This is
  * only used for debugging. When the instruction is the head of our IBP block,

@@ -275,7 +275,7 @@ static void
 remove_shadow_page(dcontext_t *dcontext, app_pc base);
 
 static uint
-get_app_stacktrace(priv_mcontext_t *mc, uint max_frames, stack_frame_t *frames);
+get_app_stacktrace(dr_mcontext_t *mc, uint max_frames, stack_frame_t *frames);
 
 static void
 copy_appstack(executable_write_t *dst, executable_write_t *src);
@@ -1131,16 +1131,16 @@ destroy_module_observer() {
 
 static inline void
 add_shadow_page(dcontext_t *dcontext, app_pc base, bool safe_to_read) {
-    priv_mcontext_t *mc = get_mcontext(dcontext);
+    dr_mcontext_t mc
     drvector_t *pending_edges = NULL;
     shadow_page_t *page = NULL;
     stack_frame_t appstack[MAX_APP_STACK_FRAMES];
     uint f, frame_count;
 
-    if (mc == NULL) {
-        pending_edges = CS_ALLOC(sizeof(drvector_t));
-        drvector_init(pending_edges, 8U, false, NULL);
-    } else {
+    mc.size = sizeof(mc);
+    mc.flags = DR_MC_INTEGER;
+
+    if (dr_get_mcontext(dcontext, &mc)) {
         module_location_t *last_module = NULL;
 
         MODULE_LOCK
@@ -1173,6 +1173,9 @@ add_shadow_page(dcontext_t *dcontext, app_pc base, bool safe_to_read) {
             pending_edge->edge_type = gencode_perm_edge;
             drvector_append(pending_edges, pending_edge);
         }
+    } else {
+        pending_edges = CS_ALLOC(sizeof(drvector_t));
+        drvector_init(pending_edges, 8U, false, NULL);
     }
 
     if (page == NULL) {
@@ -1225,7 +1228,7 @@ get_app_stacktrace(priv_mcontext_t *mc, uint max_frames, stack_frame_t *frames)
     module_location_t *frame_module;
     uint f = 0;
 
-    while (pc != NULL && is_readable_without_exception_query_os((byte *)pc, 8)) {
+    while (pc != NULL && dr_is_safe_to_read((byte *)pc, 8)) {
         frames[f].return_address = (app_pc) *(pc+1); // N.B.: using `frames[f]` as scratch at first
         if (frames[f].return_address != 0) {
             frame_module = get_module_for_address(frames[f].return_address);
@@ -1255,9 +1258,14 @@ copy_appstack(executable_write_t *dst, executable_write_t *src)
 static void
 take_write_stack_snapshot(dcontext_t *dcontext, executable_write_t *write, app_pc writer_tag)
 {
-    priv_mcontext_t *mc = get_mcontext(dcontext);
+    dr_mcontext_t mc;
     stack_frame_t appstack[MAX_APP_STACK_FRAMES];
-    uint i, frame_count = MAX(1, get_app_stacktrace(mc, MAX_APP_STACK_FRAMES, appstack));
+    uint i, frame_count;
+
+    mc.size = sizeof(mc);
+    mc.flags = DR_MC_INTEGER;
+    dr_get_mcontext(dcontext, &mc);
+    frame_count = MAX(1, get_app_stacktrace(&mc, MAX_APP_STACK_FRAMES, appstack));
 
     write->frame_count = frame_count;
     write->frames = CS_ALLOC(sizeof(stack_frame_t) * write->frame_count);

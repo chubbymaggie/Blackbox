@@ -1,3 +1,4 @@
+#include "dr_instr.h"
 #include "basic_block_observer.h"
 #include "link_observer.h"
 #include "module_observer.h"
@@ -63,8 +64,8 @@ do { \
 #define SHIFT_IN_EMPTY_BYTES(data, bytes_to_keep) \
     (data << ((4 - bytes_to_keep)*8)) >> ((4 - bytes_to_keep)*8)
 
-#define IS_CALL_GATE(i) ((i->length == 7) && (*(uint*)i->translation == 0xc015ff64) && \
-    ((*((uint*)i->translation + 1) << 0x10) == 0))
+#define IS_CALL_GATE(i) ((instr_get_length(i) == 7) && (*(uint*)instr_get_translation(i) == 0xc015ff64) && \
+    ((*((uint*)instr_get_translation(i) + 1) << 0x10) == 0))
 
 #define CALL_WILL_RETURN(i) (!instr_is_syscall(i))
 
@@ -254,7 +255,7 @@ notify_basic_block_constructed(dcontext_t *dcontext,
 
     i = instrlist_first(ilist);
 
-    if (i->opcode == OP_jmp) {
+    if (instr_get_opcode(i) == OP_jmp) {
         opnd_t src0 = instr_get_src(i, 0);
         module_location_t *jump_target_module;
 
@@ -266,12 +267,12 @@ notify_basic_block_constructed(dcontext_t *dcontext,
             hash = (bb_hash_t)OP_jmp; // it must be instrumented, so discard the operand and skip the loop
 
 #if (CROWD_SAFE_LOG_LEVEL >= CS_LOG_DETAILS) || defined(LOG_ANONYMOUS_ASSEMBLY)
-            disassemble(dcontext, i->translation, cs_log_file);
+            disassemble(dcontext, instr_get_translation(i), cs_log_file);
 #endif
         }
     } else if ((IS_SYSCALL_TRAMPOLINE(tag, syscall_trampolines_nt) ||
         IS_SYSCALL_TRAMPOLINE(tag, syscall_trampolines_zw)) &&
-        (i->opcode != OP_ret) && (i->opcode != OP_add))
+        (instr_get_opcode(i) != OP_ret) && (instr_get_opcode(i) != OP_add))
     {
         instr_t *i2 = instr_get_next(i);
         opnd_t src0 = instr_get_src(i2, 0);
@@ -309,8 +310,8 @@ notify_basic_block_constructed(dcontext_t *dcontext,
             }
 
 #ifdef UNIX
-            if ((opcode == 0x30) && (i->next == NULL)) {
-                app_pc jump_target = i->src0.value.addr;
+            if ((opcode == 0x30) && (instr_get_next(i) == NULL)) {
+                app_pc jump_target = instr_get_src(i, 0)->value.addr;
                 void *exists = hashtable_lookup(plt_stubs, jump_target);
                 if (exists != NULL) {
                     trampoline = create_trampoline_tracker(tag, jump_target);
@@ -328,7 +329,7 @@ notify_basic_block_constructed(dcontext_t *dcontext,
                         }
                     }
 
-                    ASSERT(i->next == NULL);
+                    ASSERT(instr_get_next(i) == NULL);
                     call_instr = i;
                 }
             } else if (instr_is_return(i)) {
@@ -364,7 +365,8 @@ notify_basic_block_constructed(dcontext_t *dcontext,
 
             if (location->type == module_type_image) { // relocation is not available for other module types
                 if (location->relocation_table != NULL) {
-                    next_relocation = get_next_relocation(location, i->translation, i->translation + length);
+                    next_relocation = get_next_relocation(location, instr_get_translation(i),
+                                      instr_get_translation(i) + length);
                     if (next_relocation >= 0) {
                         norm_instr_bits = normalization_buffer;
                         for (b = 0; b <= length; b++) {
@@ -374,7 +376,8 @@ notify_basic_block_constructed(dcontext_t *dcontext,
                                 *(uint*)(norm_instr_bits + b) = normalized;
                                 b += 3;
                                 if (b <= (length - 4)) {
-                                    next_relocation = get_next_relocation(location, i->translation + b, i->translation + length);
+                                    next_relocation = get_next_relocation(location, instr_get_translation(i) + b,
+                                                                          instr_get_translation(i) + length);
                                     if (next_relocation >= 0)
                                         next_relocation += b;
                                 } else {
@@ -392,7 +395,7 @@ notify_basic_block_constructed(dcontext_t *dcontext,
                 }
 
 #if (CROWD_SAFE_LOG_LEVEL >= CS_LOG_DETAILS) || defined(LOG_ANONYMOUS_ASSEMBLY)
-                disassemble(dcontext, i->translation, cs_log_file);
+                disassemble(dcontext, instr_get_translation(i), cs_log_file);
 #endif
             }
 

@@ -25,6 +25,8 @@
 #define PRAGMA_VAR_NAME_VALUE(var) #var "=" PRAGMA_VALUE(var)
 // use it like this: #pragma message(PRAGMA_VAR_NAME_VALUE(SOMETHING))
 
+#define DODEBUG(statement) do { statement } while (0)
+
 #define CS_LOG_NONE 0
 #define CS_LOG_ERRORS 1
 #define CS_LOG_WARNINGS 2
@@ -227,8 +229,8 @@ typedef uint clock_type_t;
 #define IBP_IS_PENDING_TAG(ibp_data, tag) \
     ((uint)ibp_data->ibp_from_tag > 1U) && (ibp_data->ibp_to_tag == tag)
 
-#define GET_CS_DATA(dcontext) (&(((local_state_extended_t *)(dcontext)->local_state)->crowd_safe_data))
-#define GET_IBP_METADATA(dcontext) &(((local_state_extended_t *)(dcontext)->local_state)->crowd_safe_data.ibp_data)
+#define GET_CS_DATA(dcontext) (dcontext_get_audit_state(dcontext))
+#define GET_IBP_METADATA(dcontext) (dcontext_get_audit_state(dcontext)->ibp_data)
 
 #define ANONYMOUS_MODULE_NAME "|anonymous|"
 #define UNKNOWN_MODULE_NAME "|unknown|"
@@ -270,12 +272,10 @@ typedef uint clock_type_t;
 #define SET_BLACK_BOX_THRASH(cstl) (cstl->bb_meta.is_black_box_thrash = true)
 #define SET_EXCEPTION_RESUMING(cstl) (cstl->bb_meta.is_exception_resuming = true)
 
-#define GET_CSTL(dcontext) ((crowd_safe_thread_local_t *) \
-    (((local_state_extended_t *)dcontext->local_state)->security_audit_state.crowd_safe_thread_local))
+#define GET_CSTL(dcontext) (dcontext_get_audit_state(dcontext)->crowd_safe_thread_local)
 #define SET_CSTL(dcontext, cstl) \
 do { \
-    cstl->csd = &((local_state_extended_t *)dcontext->local_state)->crowd_safe_data; \
-    cstl->csd->crowd_safe_thread_local = cstl; \
+    GET_CSTL(dcontext) = cstl; \
 } while (0);
 
 #if (CROWD_SAFE_LOG_LEVEL > CS_LOG_NONE)
@@ -652,7 +652,7 @@ drvector_t *pending_trampolines;
 #endif
 
 void
-init_crowd_safe_log(bool isFork);
+init_crowd_safe_log(bool is_fork, bool is_wow64_process);
 
 file_t
 create_early_dr_log();
@@ -848,7 +848,8 @@ validate_ordinal(dcontext_t *dcontext, app_pc from, app_pc to, byte exit_ordinal
     if ((edge_type == gencode_write_edge) && (exit_ordinal < 5))
         return;
 
-    SEC_LOG("High ordinal %d for edge type %d: "PX" to "PX"\n", exit_ordinal, edge_type, from, to);
+    SEC_LOG(2, "High ordinal %d for edge type %d: "PX" to "PX"\n", exit_ordinal,
+            edge_type, from, to);
     dr_fragment_log_ordinals(dcontext, from, "\t", 3);
 }
 

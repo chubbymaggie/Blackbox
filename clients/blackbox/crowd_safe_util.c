@@ -443,6 +443,7 @@ init_crowd_safe_util(bool is_fork) {
 
 void
 throw_app_exception(dcontext_t *dcontext) {
+    /*
     fcache_enter_func_t fcache_enter = get_fcache_enter_shared_routine(dcontext);
     app_pc exception = get_do_throw_exception_entry(dcontext);
     extern mutex_t bb_building_lock;
@@ -456,6 +457,7 @@ throw_app_exception(dcontext_t *dcontext) {
 
     enter_fcache(dcontext, fcache_enter, exception);
     ASSERT_NOT_REACHED();
+    */
 }
 
 #ifdef UNIX
@@ -616,15 +618,20 @@ current_thread_id() {
 ushort
 observe_call_stack(dcontext_t *dcontext)
 {
-    priv_mcontext_t *mc = get_mcontext(dcontext);
-    ptr_uint_t *next_pc, *pc = (ptr_uint_t *) (app_pc)mc->xbp;
+    dr_mcontext_t mc;
+    ptr_uint_t *next_pc, *pc;
     uint frame_count = 0;
     app_pc return_address;
     uint64 hash = 0ULL;
     call_stack_t *matching_stack;
 
+    mc.size = sizeof(mc);
+    mc.flags = DR_MC_INTEGER;
+    dr_get_mcontext(dcontext, &mc);
+    pc = (ptr_uint_t *) (app_pc) mc.xbp;
+
     CALL_STACK_LOCK;
-    while (pc != NULL && is_readable_without_exception_query_os((byte *)pc, 8)) {
+    while (pc != NULL && dr_is_safe_to_read((byte *)pc, 8)) {
         frame_count++;
         next_pc = (ptr_uint_t *) *pc;
         if (pc != next_pc) {
@@ -660,12 +667,14 @@ observe_call_stack(dcontext_t *dcontext)
     return matching_stack->id;
 }
 
+/*
 void
 dump_stack_trace(file_t file) {
     CROWD_SAFE_DEBUG_HOOK_VOID(__FUNCTION__);
 
     print_stacktrace(file);
 }
+*/
 
 const char *
 edge_type_string(graph_edge_type type) {
@@ -748,7 +757,7 @@ print_shadow_stack_internal(const char *tag, int frame_number, shadow_stack_fram
 
 void
 print_shadow_stack(dcontext_t *dcontext) {
-    local_crowd_safe_data_t *csd = GET_CS_DATA(dcontext);
+    local_security_audit_state_t *csd = GET_CS_DATA(dcontext);
     int frame_number = SHADOW_STACK_FRAME_NUMBER(csd, SHADOW_FRAME(csd));
     shadow_stack_frame_t *top = SHADOW_FRAME(csd);
 
@@ -801,7 +810,7 @@ return_address_iterator_start(return_address_iterator_t *i, ptr_uint_t *start) {
         return false;
 
     i->bp_current = start;
-    if (!is_readable_without_exception_query_os((byte *)start, 8) || FRAME_RETURN_ADDRESS(start) < int2p(0x40000))
+    if (!dr_is_safe_to_read((byte *)start, 8) || FRAME_RETURN_ADDRESS(start) < int2p(0x40000))
         return false;
 
     i->bp_next = (ptr_uint_t *) *start;
@@ -831,7 +840,7 @@ return_address_iterator_next(return_address_iterator_t *i, app_pc *out_addr, app
         } else {
             app_pc next_addr;
 
-            if (is_readable_without_exception_query_os((byte *)i->bp_next, 8) && /* favor the ebp chain */
+            if (dr_is_safe_to_read((byte *)i->bp_next, 8) && /* favor the ebp chain */
                 FRAME_RETURN_ADDRESS(i->bp_next) == target) {
                 i->bp_current = i->bp_next;
                 bp_next = (ptr_uint_t *) *i->bp_next;
@@ -862,7 +871,7 @@ return_address_iterator_next(return_address_iterator_t *i, app_pc *out_addr, app
                 break;
         }
         if (i->bp_walk >= i->bp_next) {
-            if (!is_readable_without_exception_query_os((byte *)i->bp_next, 8) || FRAME_RETURN_ADDRESS(i->bp_next) == NULL) {
+            if (!dr_is_safe_to_read((byte *)i->bp_next, 8) || FRAME_RETURN_ADDRESS(i->bp_next) == NULL) {
                 i->is_complete = true;
                 break;
             } else {
@@ -886,20 +895,25 @@ return_address_iterator_next(return_address_iterator_t *i, app_pc *out_addr, app
 }
 
 void
-log_shadow_stack(dcontext_t *dcontext, local_crowd_safe_data_t *csd, const char *tag) {
+log_shadow_stack(dcontext_t *dcontext, local_security_audit_state_t *csd, const char *tag) {
     crowd_safe_thread_local_t *cstl = GET_CSTL(dcontext);
     int frame_number = SHADOW_STACK_FRAME_NUMBER(csd, SHADOW_FRAME(csd)), error_frame = frame_number;
     shadow_stack_frame_t *top = SHADOW_FRAME(csd), *frame = top;
     bool has_entry = false, is_correct = true;
-    priv_mcontext_t *mc = get_mcontext(dcontext);
-    ptr_uint_t *bp = (ptr_uint_t *) (app_pc)mc->xbp;
+    dr_mcontext_t mc;
+    ptr_uint_t *bp;
+
+    mc.size = sizeof(mc);
+    mc.flags = DR_MC_INTEGER;
+    dr_get_mcontext(dcontext, &mc);
+    bp = (ptr_uint_t *) (app_pc) mc.xbp;
 
     if (frame_number > 1 && verify_shadow_stack) {
         ptr_uint_t *next_bp;
         app_pc app_return_address;
 
         if (!return_address_iterator_start(cstl->stack_walk, bp)) {
-            CS_DET("Can't verify shadow stack at bp="PX"\n", mc->xbp);
+            CS_DET("Can't verify shadow stack at bp="PX"\n", mc.xbp);
             return;
         }
 
@@ -965,7 +979,7 @@ log_shadow_stack(dcontext_t *dcontext, local_crowd_safe_data_t *csd, const char 
                 log_lock_acquire();
                 CS_LOCKED_LOG("App stack: ");
                 bp = (ptr_uint_t *) (app_pc)mc->xbp;
-                while (bp != NULL && is_readable_without_exception_query_os((byte *)bp, 8)) {
+                while (bp != NULL && dr_is_safe_to_read((byte *)bp, 8)) {
                     next_bp = (ptr_uint_t *) *bp;
                     CS_LOCKED_LOG("%x ", *(bp+1));
                     bp = next_bp;
@@ -982,8 +996,8 @@ log_shadow_stack(dcontext_t *dcontext, local_crowd_safe_data_t *csd, const char 
 
             log_lock_acquire();
             CS_LOCKED_LOG("Error at shadow frame %d: ", error_frame);
-            bp = (ptr_uint_t *) (app_pc)mc->xbp;
-            while (bp != NULL && is_readable_without_exception_query_os((byte *)bp, 8)) {
+            bp = (ptr_uint_t *) (app_pc)mc.xbp;
+            while (bp != NULL && dr_is_safe_to_read((byte *)bp, 8)) {
                 if (*(bp+1) < 0x40000)
                     break;
                 next_bp = (ptr_uint_t *) *bp;

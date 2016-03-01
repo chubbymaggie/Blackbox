@@ -33,6 +33,9 @@
 #include "../globals.h"
 #include "../fragment.h"
 #include "../link.h"
+#include "../module_shared.h"
+#include "../monitor.h"
+#include "instrument.h"
 #include "audit.h"
 
 #ifdef SECURITY_AUDIT /* around whole file */
@@ -41,10 +44,10 @@ audit_callbacks_t *audit_callbacks = NULL;
 
 DR_API
 void
-dr_enter_fcache(dcontext_t *dcontext, app_pc pc)
+dr_enter_fcache(dcontext_t *dcontext, app_pc tag)
 {
     fcache_enter_func_t fcache_enter;
-    fragment_t *f = fragment_lookup(dcontext, ibp_data->ibp_to_tag);
+    fragment_t *f = fragment_lookup(dcontext, tag);
 
     if (TEST(FRAG_SHARED, f->flags))
         fcache_enter = get_fcache_enter_shared_routine(dcontext);
@@ -72,7 +75,14 @@ DR_API
 byte *
 dr_get_ntdll_proc_address(const char *name)
 {
-    return get_proc_address(get_ntdll_base(), name);
+    return (byte *) get_proc_address(get_ntdll_base(), name);
+}
+
+DR_API
+bool
+dr_is_safe_to_read(byte *pc, size_t size)
+{
+    return is_readable_without_exception_query_os(pc, size);
 }
 
 DR_API
@@ -185,7 +195,8 @@ void
 dr_fragment_log_ordinals(dcontext_t *dcontext, app_pc tag,
                          const char *line_prefix, uint loglevel)
 {
-    fragment_t *f = fragment_lookup(dcontext, from);
+    fragment_t *f = fragment_lookup(dcontext, tag);
+
     if (f != NULL) {
         linkstub_t *l;
         byte exit_ordinal = 0x0;
@@ -220,9 +231,10 @@ dr_log_ibp_state(dcontext_t *dcontext, uint loglevel)
 
 DR_API
 void
-dr_log_last_exit(dcontext_t *dcontext, const char *prefix, uint loglevel)
+dr_log_last_exit(dcontext_t *dcontext, app_pc tag, const char *prefix, uint loglevel)
 {
     linkstub_t *l;
+    fragment_t *f = fragment_lookup(dcontext, tag);
 
     SEC_LOG(loglevel, "%s%sbuilding trace\n", prefix,
             is_building_trace(dcontext) ? "" : "not ");

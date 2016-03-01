@@ -33,17 +33,19 @@
 #ifndef _AUDIT_H_
 #define _AUDIT_H_ 1
 
-#ifdef SECURITY_AUDIT
-
 #include "../globals.h"
 #include "../fragment.h"
 #include "../synch.h"
-//#include "instrument.h"
 #include "instr.h"
 
 #ifdef WINDOWS
 # include "../win32/ntdll_types.h"
 #endif
+
+/* DR_API EXPORT TOFILE dr_audit.h */
+/* DR_API EXPORT BEGIN */
+
+#ifdef SECURITY_AUDIT
 
 #define SEC_LOG(level, format, ...) \
 do { \
@@ -51,19 +53,28 @@ do { \
         dr_fprintf(*audit_callbacks->audit_log_file, format, __VA_ARGS__); \
 } while (0)
 
-/* DR_API EXPORT TOFILE dr_audit.h */
-/* DR_API EXPORT BEGIN */
+#endif /* SECURITY_AUDIT */
 
 #ifdef API_EXPORT_ONLY
 #include "dr_config.h"
 
 typedef void dcontext_t;
+//typedef byte * cache_pc;
 
 typedef struct _dr_fragment_t {
     app_pc    tag;
     uint      flags;
 } dr_fragment_t;
-#endif
+#endif /* API_EXPORT_ONLY */
+
+/* DR_API EXPORT END */
+
+typedef fragment_t dr_fragment_t; /* not API exported */
+
+/* DR_API EXPORT TOFILE dr_audit.h */
+/* DR_API EXPORT BEGIN */
+
+#ifdef SECURITY_AUDIT
 
 /****************************************************************************
  * SECURITY AUDITING SUPPORT
@@ -86,11 +97,11 @@ typedef struct _audit_callbacks_t {
     void (*audit_dispatch)(dcontext_t *dcontext);
     void (*audit_fcache_enter)(dcontext_t *dcontext);
     void (*audit_fragment_indirect_link)(dcontext_t *dcontext);
-    void (*audit_fragment_direct_link(dcontext_t *dcontext, app_pc from,
-                                      app_pc to, byte ordinal);
+    void (*audit_fragment_direct_link)(dcontext_t *dcontext, app_pc from,
+                                       app_pc to, byte ordinal);
     void (*audit_syscall)(dcontext_t *dcontext, app_pc tag, int syscall_number);
     bool (*audit_filter_syscall)(int sysnum);
-    void (*audit_bb_link_complete)(dcontext_t *dcontext, fragment_t *f);
+    void (*audit_bb_link_complete)(dcontext_t *dcontext, dr_fragment_t *f);
     void (*audit_translation)(dcontext_t *dcontext, app_pc start_pc, instrlist_t *ilist,
                               int sysnum);
     void (*audit_fragment_remove)(dcontext_t *dcontext, app_pc tag);
@@ -118,7 +129,7 @@ typedef struct _audit_callbacks_t {
                                                app_pc ibl_routine_start_pc);
     app_pc (*audit_adjust_for_ibl_instrumentation)(dcontext_t *dcontext, app_pc pc,
                                                    app_pc raw_start_pc);
-    void (*audit_code_modification)(dcontext_t *dcontext, fragment_t *f, app_pc next_pc,
+    void (*audit_code_modification)(dcontext_t *dcontext, dr_fragment_t *f, app_pc next_pc,
                                     app_pc target, size_t write_size);
     void (*audit_gencode_ibl_routine)(app_pc pc, bool syscall);
     void (*audit_heartbeat)(dcontext_t *dcontext);
@@ -138,13 +149,13 @@ typedef struct _audit_callbacks_t {
                                             bool wait_all);
 } audit_callbacks_t;
 
-/* DR_API EXPORT END */
-
 extern audit_callbacks_t *audit_callbacks;
+
+/* DR_API EXPORT END */
 
 DR_API
 void
-dr_enter_fcache(dcontext_t *dcontext, app_pc pc);
+dr_enter_fcache(dcontext_t *dcontext, app_pc tag);
 
 DR_API
 void
@@ -159,8 +170,16 @@ byte *
 dr_get_ntdll_proc_address(const char *name);
 
 DR_API
-ibp_data_t
+bool
+dr_is_safe_to_read(byte *pc, size_t size);
+
+DR_API
+ibp_metadata_t *
 dcontext_get_ibp_data(dcontext_t *dcontext);
+
+DR_API
+local_security_audit_state_t *
+dcontext_get_audit_state(dcontext_t *dcontext);
 
 DR_API
 app_pc
@@ -168,19 +187,19 @@ dr_get_building_trace_tail(dcontext_t *dcontext, bool *is_return, app_pc *trace_
 
 DR_API
 byte
-dr_fragment_find_direct_ordinal(fragment_t *from, app_pc to);
+dr_fragment_find_direct_ordinal(dr_fragment_t *from, app_pc to);
 
 DR_API
 byte
-dr_fragment_find_indirect_ordinal(fragment_t *f);
+dr_fragment_find_indirect_ordinal(dr_fragment_t *f);
 
 DR_API
 byte
-dr_fragment_find_call_ordinal(fragment_t *f);
+dr_fragment_find_call_ordinal(dr_fragment_t *f);
 
 DR_API
 byte
-dr_fragment_count_ordinals(fragment_t *f);
+dr_fragment_count_ordinals(dr_fragment_t *f);
 
 DR_API
 void
@@ -193,7 +212,7 @@ dr_log_ibp_state(dcontext_t *dcontext, uint loglevel);
 
 DR_API
 void
-dr_log_last_exit(dcontext_t *dcontext, const char *prefix, uint loglevel);
+dr_log_last_exit(dcontext_t *dcontext, app_pc tag, const char *prefix, uint loglevel);
 
 
 /****************************************************************************
@@ -316,21 +335,21 @@ audit_fcache_enter(dcontext_t *dcontext)
 /* links */
 
 inline void
-audit_fragment_indirect_link(dcontext_t *dcontext)
-{
-    if (audit_callbacks == NULL)
-        return;
-
-    audit_callbacks->audit_fragment_indirect_link(dcontext, direct);
-}
-
-inline void
 audit_fragment_direct_link(dcontext_t *dcontext, app_pc from, app_pc to, byte ordinal)
 {
     if (audit_callbacks == NULL)
         return;
 
-    audit_callbacks->audit_fragment_link_tags(dcontext, from, to, exit_ordinal);
+    audit_callbacks->audit_fragment_direct_link(dcontext, from, to, ordinal);
+}
+
+inline void
+audit_fragment_indirect_link(dcontext_t *dcontext)
+{
+    if (audit_callbacks == NULL)
+        return;
+
+    audit_callbacks->audit_fragment_indirect_link(dcontext);
 }
 
 inline void
@@ -352,7 +371,7 @@ audit_filter_syscall(int sysnum)
 }
 
 inline void
-audit_bb_link_complete(dcontext_t *dcontext, fragment_t *f)
+audit_bb_link_complete(dcontext_t *dcontext, dr_fragment_t *f)
 {
     if (audit_callbacks == NULL)
         return;
@@ -510,7 +529,7 @@ audit_adjust_for_ibl_instrumentation(dcontext_t *dcontext, app_pc pc, app_pc raw
 }
 
 inline void
-audit_code_modification(dcontext_t *dcontext, fragment_t *f, app_pc next_pc,
+audit_code_modification(dcontext_t *dcontext, dr_fragment_t *f, app_pc next_pc,
                         app_pc target, size_t write_size)
 {
     if (audit_callbacks == NULL)
