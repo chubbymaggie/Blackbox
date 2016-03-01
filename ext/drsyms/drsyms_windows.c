@@ -6,18 +6,18 @@
 /*
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
- * 
+ *
  * * Redistributions of source code must retain the above copyright notice,
  *   this list of conditions and the following disclaimer.
- * 
+ *
  * * Redistributions in binary form must reproduce the above copyright notice,
  *   this list of conditions and the following disclaimer in the documentation
  *   and/or other materials provided with the distribution.
- * 
+ *
  * * Neither the name of VMware, Inc. nor the names of its contributors may be
  *   used to endorse or promote products derived from this software without
  *   specific prior written permission.
- * 
+ *
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
  * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
  * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
@@ -73,7 +73,7 @@
 #include <stdio.h> /* _vsnprintf */
 
 /* We use the Container Extension's hashtable */
-#include "hashtable.h"
+#include "drhashtable.h"
 
 #include "drsyms.h"
 #include "wininc/dia2.h"  /* for BasicType and SymTagEnum */
@@ -393,7 +393,7 @@ load_module(HANDLE proc, const char *path)
                 /* We can't unload (gives ERROR_INVALID_PARAMETER) so we load again */
 #ifdef DEBUG
                 char *ext = strrchr(path, '.');
-                if (ext != NULL && !stri_eq(ext, ".exe"))
+                if (ext != NULL && !hashtable_stri_eq(ext, ".exe"))
                     NOTIFY("Failed to load %s at our chosen base\n", path);
 #endif
                 /* Can pass 0 to SymLoadModuleExW */
@@ -634,7 +634,7 @@ typedef struct _enum_info_t {
 } enum_info_t;
 
 static BOOL CALLBACK
-enum_cb(PSYMBOL_INFO pSymInfo, ULONG SymbolSize, PVOID Context) 
+enum_cb(PSYMBOL_INFO pSymInfo, ULONG SymbolSize, PVOID Context)
 {
     enum_info_t *info = (enum_info_t *) Context;
     info->found_match = true;

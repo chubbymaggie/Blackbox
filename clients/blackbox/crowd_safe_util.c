@@ -5,9 +5,9 @@
 #include <errno.h>
 #include "basic_block_hashtable.h"
 #include "crowd_safe_trace.h"
-#include "stacktrace.h"
-#include "../../core/x86/instrument.h"
-#include "../../core/utils.h"
+//#include "stacktrace.h"
+//#include "../../core/x86/instrument.h"
+//#include "../../core/utils.h"
 
 #ifdef UNIX
 # include <pthread.h>
@@ -21,7 +21,7 @@ void *hashcode_mutex; // only for access by inline functions in crowd_safe_util.
 
 char *monitor_dataset_path;
 
-const char *monitor_dataset_dir;
+extern const char *monitor_dataset_dir;
 
 /**** Private Fields ****/
 
@@ -83,8 +83,6 @@ static stack_spy_sysnum_set_t stack_spy_sysnum_sets = {
 // cs-todo: only observe NtWaitForSingleObject when netmon is on (wow64: 0x1; x86: 0x187)
 const uint *stack_spy_sysnums;
 uint stack_spy_sysnum_offset;
-
-uint crowd_safe_options;
 
 //typedef struct _crowd_safe_util_metadata_t {
 //} crowd_safe_util_metadata_t;
@@ -206,7 +204,7 @@ static const uint SHADOW_STACK_MISSING_FRAME_KEY_SIZE = 7;
 
 /**** Public Fields ****/
 
-alarm_type_t alarm_type;
+// alarm_type_t alarm_type;
 
 bool *debug_instrumentation;
 
@@ -255,7 +253,7 @@ call_stack_delete(call_stack_t *call_stack);
 /**** Public Functions ****/
 
 void
-init_crowd_safe_log(bool is_fork) {
+init_crowd_safe_log(bool is_fork, bool is_wow64_process) {
 #ifdef CROWD_SAFE_LOG_ACTIVE
     char filename[256];
 #endif
@@ -279,7 +277,7 @@ init_crowd_safe_log(bool is_fork) {
     cs_log_file = create_output_file(filename);
 #endif
 
-    if (is_wow64_process(NT_CURRENT_PROCESS)) {
+    if (is_wow64_process) {
         stack_spy_sysnum_offset = 1;
         if (CROWD_SAFE_NETWORK_MONITOR())
             stack_spy_sysnums = stack_spy_sysnum_sets.wow64_netmon;
@@ -339,40 +337,6 @@ init_crowd_safe_util(bool is_fork) {
         is_child_by_marker = false;
     }
     */
-
-    monitor_dataset_dir = NULL;
-
-    if (DYNAMO_OPTION(bb_graph)) {
-        crowd_safe_options |= CROWD_SAFE_BB_GRAPH_OPTION;
-
-        string_option_read_lock();
-        monitor_dataset_dir = DYNAMO_OPTION(dataset_home);
-        string_option_read_unlock();
-
-        if (DYNAMO_OPTION(monitor)) {
-            crowd_safe_options |= CROWD_SAFE_MONITOR_OPTION;
-            alarm_type = DYNAMO_OPTION(alarm);
-            if (alarm_type > ALARM_OFF) {
-#ifdef MONITOR_UNEXPECTED_IBP
-                crowd_safe_options |= CROWD_SAFE_ALARM_OPTION;
-#else
-                CS_ERR("Request for alarm type %d is ignored because unexpected IBP are not monitored in this build. "
-                    "Requires #define MONITOR_UNEXPECTED_IBP\n", alarm_type);
-#endif
-            }
-        }
-
-        if (DYNAMO_OPTION(xhash))
-            crowd_safe_options |= CROWD_SAFE_RECORD_XHASH_OPTION;
-    }
-    if (DYNAMO_OPTION(netmon))
-        crowd_safe_options |= CROWD_SAFE_NETWORK_MONITOR_OPTION;
-    if (DYNAMO_OPTION(block_hash))
-        CS_ERR("Skipping option 'block_hash' because it is not currently supported.\n");
-    if (DYNAMO_OPTION(pair_hash))
-        CS_ERR("Skipping option 'pair_hash' because it is not currently supported.\n");
-    if (DYNAMO_OPTION(meta_on_clock))
-        crowd_safe_options |= CROWD_SAFE_META_ON_CLOCK_OPTION;
 
 #ifdef CROWD_SAFE_TRACK_MEMORY
     if (!is_fork) {

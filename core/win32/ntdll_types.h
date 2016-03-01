@@ -26,7 +26,14 @@
 #pragma warning(disable: 4201)
 
 typedef unsigned int uint;
+
+/* DR_API EXPORT TOFILE dr_audit.h */
+/* DR_API EXPORT BEGIN */
+
 typedef LONG NTSTATUS;
+
+/* DR_API EXPORT END */
+
 /* make sure to cast to signed in case passed reg_t */
 #define NT_SUCCESS(Status) ((NTSTATUS)(Status) >= 0)
 #define NT_ERROR(Status) ((((ULONG)(Status)) >> 30) == 3)
@@ -202,6 +209,9 @@ typedef struct _SECTION_IMAGE_INFORMATION { // Information Class 1
     ULONG Unknown4[3];
 } SECTION_IMAGE_INFORMATION, *PSECTION_IMAGE_INFORMATION;
 
+/* DR_API EXPORT TOFILE dr_audit.h */
+/* DR_API EXPORT BEGIN */
+
 typedef struct _IO_STATUS_BLOCK {
     union {
         NTSTATUS Status;
@@ -209,6 +219,8 @@ typedef struct _IO_STATUS_BLOCK {
     };
     ULONG_PTR Information;
 } IO_STATUS_BLOCK, *PIO_STATUS_BLOCK;
+
+/* DR_API EXPORT END */
 
 typedef enum _KPROFILE_SOURCE {
     ProfileTime
@@ -294,10 +306,10 @@ typedef struct _FILE_BASIC_INFORMATION {
     LARGE_INTEGER ChangeTime;
     ULONG FileAttributes;
 } FILE_BASIC_INFORMATION, *PFILE_BASIC_INFORMATION;
-                                                            
+
 /* FileSystem types for nt_query_volume_info */
 /* should be available in ntifs.h from IFS.
- * This version is from reactos/0.2.9/include/ndk/iotypes.h 
+ * This version is from reactos/0.2.9/include/ndk/iotypes.h
  */
 typedef enum _FS_INFORMATION_CLASS {
     FileFsVolumeInformation=1,
@@ -415,6 +427,9 @@ typedef enum _EVENT_TYPE {
     SynchronizationEvent /* automatically changes state to non-signaled after releasing a waiting thread */
 } EVENT_TYPE, *PEVENT_TYPE;
 
+/* DR_API EXPORT TOFILE dr_audit.h */
+/* DR_API EXPORT BEGIN */
+
 typedef enum _IoControlCode {
     AFD_BIND = 0x12003,
     AFD_CONNECT = 0x12007,
@@ -430,10 +445,12 @@ typedef enum _IoControlCode {
     AFD_ICMP = 0x120013
 } IoControlCode;
 
+/* DR_API EXPORT END */
+
 typedef struct _AFD_WSABUF {
     UINT len;
     PCHAR buf;
-} AFD_WSABUF , *PAFD_WSABUF; 
+} AFD_WSABUF , *PAFD_WSABUF;
 
 typedef struct _AFD_RECV_INFO {
     PAFD_WSABUF BufferArray;
@@ -443,7 +460,7 @@ typedef struct _AFD_RECV_INFO {
 } AFD_RECV_INFO , *PAFD_RECV_INFO;
 
 /* we don't actually use this but for cleanliness sake, is from ntddk.h */
-typedef 
+typedef
 VOID
 (NTAPI *PIO_APC_ROUTINE) (
                           IN PVOID ApcContext,

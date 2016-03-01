@@ -1,5 +1,6 @@
 /* **********************************************************
- * Copyright (c) 2011 Google, Inc.  All rights reserved.
+ * Copyright (c) 2011-2013 Google, Inc.  All rights reserved.
+ * Copyright (c) 2007-2010 VMware, Inc.  All rights reserved.
  * **********************************************************/
 
 /*
@@ -30,12 +31,18 @@
  * DAMAGE.
  */
 
-/* Containers DynamoRIO Extension: DrVector */
+/* Containers DynamoRIO Extension: Hashtable */
+
+#ifdef WINDOWS
+# define _CRT_SECURE_NO_DEPRECATE 1
+#endif
 
 #include "dr_api.h"
 
-#include <string.h> /* memcpy */
+#include "drhashtable.h"
+#include "drhashtablex.h" // template!
+#ifdef UNIX
+# include <string.h>
+#endif
+#include <stddef.h> /* offsetof */
 
-/* Template instantiation: drvector_t */
-#include "drvector.h"
-#include "drvectorx.h"

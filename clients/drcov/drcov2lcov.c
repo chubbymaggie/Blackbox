@@ -5,18 +5,18 @@
 /*
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
- * 
+ *
  * * Redistributions of source code must retain the above copyright notice,
  *   this list of conditions and the following disclaimer.
- * 
+ *
  * * Redistributions in binary form must reproduce the above copyright notice,
  *   this list of conditions and the following disclaimer in the documentation
  *   and/or other materials provided with the distribution.
- * 
+ *
  * * Neither the name of Google, Inc. nor the names of its contributors may be
  *   used to endorse or promote products derived from this software without
  *   specific prior written permission.
- * 
+ *
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
  * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
  * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
@@ -42,7 +42,7 @@
 #include "dr_api.h"
 #include "drcov.h"
 #include "drsyms.h"
-#include "hashtable.h"
+#include "drhashtable.h"
 
 #include "../common/utils.h"
 #undef ASSERT /* we're standalone, so no client assert */
@@ -86,7 +86,7 @@ static int warning = 1;
     }                                                       \
 } while (0)
 
-const char *usage_str = 
+const char *usage_str =
     "drcov2lcov: covert drcov file format to lcov file format\n"
     "usage: drcov2lcov [options]\n"
     "      --help                          Print this message.\n"
@@ -820,7 +820,7 @@ read_debug_info(void)
     uint i, num_entries = 0;
     /* iterate module table */
     for (i = 0; i < HASHTABLE_SIZE(module_htable.table_bits); i++) {
-        hash_entry_t *e;
+        hashtable_entry_t *e;
         drsym_error_t res;
         for (e = module_htable.table[i]; e != NULL; e = e->next) {
             num_entries++;
@@ -849,8 +849,8 @@ read_debug_info(void)
 static int
 compare_source_file(const void *a_in, const void *b_in)
 {
-    hash_entry_t *e1 = *(hash_entry_t **)a_in;
-    hash_entry_t *e2 = *(hash_entry_t **)b_in;
+    hashtable_entry_t *e1 = *(hashtable_entry_t **)a_in;
+    hashtable_entry_t *e2 = *(hashtable_entry_t **)b_in;
     return strcmp(e1->key, e2->key);
 }
 
@@ -859,8 +859,8 @@ write_lcov_output(void)
 {
     file_t log;
     uint i, num_entries = 0;
-    hash_entry_t *e;
-    hash_entry_t **src_array;
+    hashtable_entry_t *e;
+    hashtable_entry_t **src_array;
     char *buf, *ptr;
     size_t buf_sz;
 

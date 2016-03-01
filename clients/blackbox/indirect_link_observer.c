@@ -1,11 +1,11 @@
 #include "indirect_link_observer.h"
 #include <string.h>
-#include "../../core/x86/arch.h"
-#include "../../core/x86/instr.h"
-#include "../../core/x86/instrument.h"
-#include "../../core/x86/instr_create.h"
-#include "../../core/heap.h"
-#include "../../core/fragment.h"
+//#include "../../core/x86/arch.h"
+//#include "../../core/x86/instr.h"
+//#include "../../core/x86/instrument.h"
+//#include "../../core/x86/instr_create.h"
+//#include "../../core/heap.h"
+//#include "../../core/fragment.h"
 #include "crowd_safe_util.h"
 #include "link_observer.h"
 #include "crowd_safe_trace.h"
@@ -44,7 +44,7 @@ init_indirect_link_observer(dcontext_t *dcontext) {
 
 void
 indirect_link_observer_thread_init(dcontext_t *dcontext) {
-    local_crowd_safe_data_t *csd = GET_CS_DATA(dcontext);
+    local_security_audit_state_t *csd = GET_CS_DATA(dcontext);
     crowd_safe_thread_local_t *cstl = GET_CSTL(dcontext);
     CROWD_SAFE_DEBUG_HOOK_VOID(__FUNCTION__);
 
@@ -74,7 +74,7 @@ indirect_link_observer_thread_init(dcontext_t *dcontext) {
 
 void
 indirect_link_hashtable_insert(dcontext_t *dcontext) {
-    local_crowd_safe_data_t *csd = GET_CS_DATA(dcontext);
+    local_security_audit_state_t *csd = GET_CS_DATA(dcontext);
     ibp_metadata_t *ibp_data = &csd->ibp_data;
     crowd_safe_thread_local_t *cstl = csd->crowd_safe_thread_local;
     DEBUG_DECLARE(bb_state_t *from_state = NULL;)
@@ -264,7 +264,7 @@ indirect_link_hashtable_insert(dcontext_t *dcontext) {
 #ifdef CROWD_SAFE_DYNAMIC_IMPORTS
 void
 harvest_resolved_imports(dcontext_t *dcontext) {
-    local_crowd_safe_data_t *csd = GET_CS_DATA(dcontext);
+    local_security_audit_state_t *csd = GET_CS_DATA(dcontext);
     CROWD_SAFE_DEBUG_HOOK_VOID(__FUNCTION__);
 
     if (!CROWD_SAFE_BB_GRAPH())
@@ -303,7 +303,7 @@ harvest_resolved_imports(dcontext_t *dcontext) {
 
 void
 push_nested_shadow_stack(dcontext_t *dcontext) {
-    local_crowd_safe_data_t *csd = GET_CS_DATA(dcontext);
+    local_security_audit_state_t *csd = GET_CS_DATA(dcontext);
     CROWD_SAFE_DEBUG_HOOK_VOID(__FUNCTION__);
 
     if (!CROWD_SAFE_BB_GRAPH())
@@ -318,7 +318,7 @@ push_nested_shadow_stack(dcontext_t *dcontext) {
 
 void
 pop_nested_shadow_stack(dcontext_t *dcontext) {
-    local_crowd_safe_data_t *csd = GET_CS_DATA(dcontext);
+    local_security_audit_state_t *csd = GET_CS_DATA(dcontext);
     crowd_safe_thread_local_t *cstl = csd->crowd_safe_thread_local;
     CROWD_SAFE_DEBUG_HOOK_VOID(__FUNCTION__);
 
@@ -337,7 +337,7 @@ pop_nested_shadow_stack(dcontext_t *dcontext) {
 
 void
 pop_shadow_stack_frame(dcontext_t *dcontext) {
-    local_crowd_safe_data_t *csd = GET_CS_DATA(dcontext);
+    local_security_audit_state_t *csd = GET_CS_DATA(dcontext);
     crowd_safe_thread_local_t *cstl = csd->crowd_safe_thread_local;
     CROWD_SAFE_DEBUG_HOOK_VOID(__FUNCTION__);
 
@@ -369,7 +369,7 @@ destroy_indirect_link_observer() {
 
 static inline void
 report_unexpected_return(dcontext_t *dcontext) {
-    local_crowd_safe_data_t *csd = GET_CS_DATA(dcontext);
+    local_security_audit_state_t *csd = GET_CS_DATA(dcontext);
     ibp_metadata_t *ibp_data = &csd->ibp_data;
     shadow_stack_frame_t *f = csd->shadow_stack_miss_frame;
     module_location_t *from_module = get_module_for_address(ibp_data->ibp_from_tag);

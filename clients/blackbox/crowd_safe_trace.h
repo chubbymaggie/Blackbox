@@ -5,7 +5,7 @@
 #include "module_observer.h"
 #include "network_monitor.h"
 #include "crowd_safe_util.h"
-#include "../../core/synch.h"
+//#include "../../core/synch.h"
 
 typedef enum trace_file_id trace_file_id;
 enum trace_file_id {

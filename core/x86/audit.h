@@ -53,10 +53,12 @@ do { \
 /* DR_API EXPORT TOFILE dr_audit.h */
 /* DR_API EXPORT BEGIN */
 
+#define DCONTEXT_NEXT_TAG(dc) dcontext_get_next_tag(dc)
+
 #ifdef API_EXPORT_ONLY
 #include "dr_config.h"
 typedef void dcontext_t;
-typedef void (*func)() fcache_enter_func_t;
+typedef linkstub_t * (*fcache_enter_func_t)(dcontext_t *dcontext);
 #endif
 
 /****************************************************************************
@@ -68,7 +70,7 @@ typedef struct _audit_callbacks_t {
     uint log_level;
     void (*audit_init)(dcontext_t *dcontext, bool is_fork);
     void (*audit_exit)();
-    void (*audit_init_log)(bool is_fork);
+    void (*audit_init_log)(bool is_fork, bool is_wow64_process);
     void (*audit_create_logfile)();
     void (*audit_close_logfile)();
     void (*audit_dynamo_model_initialized)();
@@ -141,6 +143,10 @@ DR_API
 void
 dr_register_audit_callbacks(audit_callbacks_t *callbacks);
 
+DR_API
+app_pc
+dcontext_get_next_tag(dcontext_t *dcontext);
+
 /****************************************************************************
  * SECURITY AUDITING INTERNAL_CALLBACKS
  */
@@ -160,9 +166,9 @@ audit_exit()
 }
 
 inline void
-audit_init_log(bool is_fork)
+audit_init_log(bool is_fork, bool is_wow64_process)
 {
-    audit_callbacks->audit_init_log(is_fork);
+    audit_callbacks->audit_init_log(is_fork, is_wow64_process);
 }
 
 inline file_t

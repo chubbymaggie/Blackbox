@@ -1,5 +1,5 @@
-#include "../../core/globals.h"
-#include "../drcontainers/drhashtable.h"
+//#include "../../core/globals.h"
+#include "drhashtable.h"
 #include "crowd_safe_util.h"
 #include "module_observer.h"
 #include "execution_monitor.h"
@@ -182,8 +182,8 @@ map_node_type_offset_to_entry_text(uint offset) {
 
 static inline bool
 is_node_type(module_location_t *module, bb_state_t *state) {
-	return IS_BB_UNEXPECTED_RETURN(state) || 
-	       IS_BB_WHITE_BOX(module, state) || 
+	return IS_BB_UNEXPECTED_RETURN(state) ||
+	       IS_BB_WHITE_BOX(module, state) ||
 		   IS_BB_BLACK_BOX(state);
 }
 
@@ -212,10 +212,10 @@ load_edge_entry(char **word_mark) {
     if (from_node_type_offset > BLACKLIST_NODE_OFFSET_NONE || to_node_type_offset > BLACKLIST_NODE_OFFSET_NONE) {
         blacklist_node_type_t *node = CS_ALLOC(sizeof(blacklist_node_type_t));
         node->from.module_name = dr_strdup(from_module HEAPACCT(ACCT_CLIENT));
-		
+
 		has_offset_wildcard |= (from_node_type_offset == BLACKLIST_NODE_OFFSET_WILDCARD);
 		has_offset_wildcard |= (to_node_type_offset == BLACKLIST_NODE_OFFSET_WILDCARD);
-		
+
         if (from_node_type_offset > BLACKLIST_NODE_OFFSET_NONE) {
             node->from.offset = from_node_type_offset;
         } else if (from_export) {
@@ -392,9 +392,9 @@ load_node_entry(char **word_mark) {
         node->from.offset = node_type_offset;
         node->to.module_name = NULL;
         drvector_append(blacklist_node_type_list, node);
-		
+
 		has_offset_wildcard |= (node_type_offset == BLACKLIST_NODE_OFFSET_WILDCARD);
-		
+
         return true;
     }
 
@@ -706,7 +706,7 @@ blacklist_node_matches_module(blacklist_node_t *node, module_location_t *module)
 }
 
 static inline bool
-blacklist_node_matches_offset(blacklist_node_t *node, module_location_t *module, 
+blacklist_node_matches_offset(blacklist_node_t *node, module_location_t *module,
                               app_pc tag, bb_state_t *state) {
 	if (node->offset == BLACKLIST_NODE_OFFSET_WILDCARD)
 		return true;
@@ -716,7 +716,7 @@ blacklist_node_matches_offset(blacklist_node_t *node, module_location_t *module,
 		return true;
     if (node->offset == BLACKLIST_NODE_OFFSET_BLACK_BOX && IS_BB_BLACK_BOX(state))
 		return true;
-		
+
 	return node->offset == p2int(MODULAR_PC(module, tag));
 }
 
@@ -868,7 +868,7 @@ check_blacklist_edge(module_location_t *from_module, module_location_t *to_modul
 						case BLACKLIST_NODE_OFFSET_WILDCARD:  /* trusted static node */
 						case BLACKLIST_NODE_OFFSET_WHITE_BOX: /* trusted dynamic node */
 						case BLACKLIST_NODE_OFFSET_BLACK_BOX:
-							if (!IS_BB_MONITOR_MISS(from_state)) 
+							if (!IS_BB_MONITOR_MISS(from_state))
 								continue;
 							break;
 					}

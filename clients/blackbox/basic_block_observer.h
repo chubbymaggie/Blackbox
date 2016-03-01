@@ -4,8 +4,10 @@
 /* The BB observer is responsible for maintaining the hashtable of basic
  * blocks, and for directing the observation of dynamic syscalls. */
 
-#include "../../core/globals.h"
-#include "../../core/instrlist.h"
+#include "dr_api.h"
+
+//#include "../../core/globals.h"
+//#include "../../core/instrlist.h"
 
 void
 init_basic_block_observer(bool isFork);

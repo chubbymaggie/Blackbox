@@ -1,12 +1,17 @@
 #ifndef CROWD_SAFE_UTIL_H
 #define CROWD_SAFE_UTIL_H 1
 
-#include "../../core/globals.h"
-#include "../../core/fragment.h"
-#include "../../core/vmareas.h"
-#include "../../core/x86/instrument.h"
-#include "../drcontainers/drhashtable.h"
-#include "../drcontainers/drvector.h"
+//#include "../../core/globals.h"
+//#include "../../core/fragment.h"
+//#include "../../core/vmareas.h"
+//#include "../../core/x86/instrument.h"
+#include "../common/utils.h"
+
+#undef ASSERT
+#define ASSERT(condition) DR_ASSERT_MSG(condition, ##condition)
+
+#include "drhashtable.h"
+#include "drvector.h"
 #include "indirect_link_observer.h"
 
 #ifdef UNIX
@@ -135,14 +140,13 @@ typedef uint clock_type_t;
 # define XBP(dcontext) (app_pc)dcontext->upcontext_ptr->mcontext.ebp
 #endif
 
-#define CROWD_SAFE_BB_GRAPH_OPTION 1
-#define CROWD_SAFE_MONITOR_OPTION 2
-#define CROWD_SAFE_ALARM_OPTION 4
-#define CROWD_SAFE_NETWORK_MONITOR_OPTION 8
-#define CROWD_SAFE_BLOCK_HASH_OPTION 0x10
-#define CROWD_SAFE_PAIR_HASH_OPTION 0x20
-#define CROWD_SAFE_META_ON_CLOCK_OPTION 0x40
-#define CROWD_SAFE_RECORD_XHASH_OPTION 0x80
+#define CROWD_SAFE_MONITOR_OPTION 1
+#define CROWD_SAFE_ALARM_OPTION 2
+#define CROWD_SAFE_NETWORK_MONITOR_OPTION 4
+#define CROWD_SAFE_BLOCK_HASH_OPTION 8
+#define CROWD_SAFE_PAIR_HASH_OPTION 0x10
+#define CROWD_SAFE_META_ON_CLOCK_OPTION 0x20
+#define CROWD_SAFE_RECORD_XHASH_OPTION 0x40
 #define CROWD_SAFE_BB_GRAPH() is_crowd_safe_option_active(CROWD_SAFE_BB_GRAPH_OPTION)
 #define CROWD_SAFE_MONITOR() is_crowd_safe_option_active(CROWD_SAFE_MONITOR_OPTION)
 #define CROWD_SAFE_ALARM() is_crowd_safe_option_active(CROWD_SAFE_ALARM_OPTION)
@@ -275,7 +279,7 @@ typedef uint clock_type_t;
 #define SET_EXCEPTION_RESUMING(cstl) (cstl->bb_meta.is_exception_resuming = true)
 
 #define GET_CSTL(dcontext) ((crowd_safe_thread_local_t *) \
-    (((local_state_extended_t *)dcontext->local_state)->crowd_safe_data.crowd_safe_thread_local))
+    (((local_state_extended_t *)dcontext->local_state)->security_audit_state.crowd_safe_thread_local))
 #define SET_CSTL(dcontext, cstl) \
 do { \
     cstl->csd = &((local_state_extended_t *)dcontext->local_state)->crowd_safe_data; \
@@ -609,7 +613,7 @@ typedef struct _return_address_iterator_t {
 
 typedef struct crowd_safe_thread_local_t crowd_safe_thread_local_t;
 struct crowd_safe_thread_local_t {
-    local_crowd_safe_data_t *csd;
+    local_security_audit_state_t *csd;
     shadow_stack_frame_t *shadow_stack_base;
     basic_block_meta_t bb_meta;
 #ifdef MONITOR_ENTRY_RATE
@@ -739,7 +743,7 @@ void
 print_shadow_stack(dcontext_t *dcontext);
 
 void
-log_shadow_stack(dcontext_t *dcontext, local_crowd_safe_data_t *csd, const char *tag);
+log_shadow_stack(dcontext_t *dcontext, local_security_audit_state_t *csd, const char *tag);
 
 /* Close the BB analysis file, if it was in use. */
 void
@@ -859,7 +863,7 @@ count_ordinals(fragment_t *f) {
 }
 
 inline void
-check_shadow_stack_bounds(local_crowd_safe_data_t *csd)
+check_shadow_stack_bounds(local_security_audit_state_t *csd)
 {
     shadow_stack_frame_t *base = GET_SHADOW_STACK_BASE(csd);
     if (csd->shadow_stack <= base || csd->shadow_stack > base + SHADOW_STACK_SIZE) {

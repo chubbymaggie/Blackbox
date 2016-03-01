@@ -1,13 +1,13 @@
 #include "link_observer.h"
 #include <string.h>
-#include "../../core/link.h"
-#include "../../core/x86/instrument.h"
-#include "../../core/x86/disassemble.h"
-#include "../../core/os_shared.h"
-#include "../../core/native_exec.h"
-#include "../../core/module_shared.h"
-#include "../../core/win32/ntdll.h"
-#include "../../core/utils.h"
+//#include "../../core/link.h"
+//#include "../../core/x86/instrument.h"
+//#include "../../core/x86/disassemble.h"
+//#include "../../core/os_shared.h"
+//#include "../../core/native_exec.h"
+//#include "../../core/module_shared.h"
+//#include "../../core/win32/ntdll.h"
+//#include "../../core/utils.h"
 #include "crowd_safe_util.h"
 #include "module_observer.h"
 #include "crowd_safe_trace.h"
@@ -149,7 +149,7 @@ link_observer_thread_init(dcontext_t *dcontext) {
 
 void
 crowd_safe_dispatch(dcontext_t *dcontext) {
-    local_crowd_safe_data_t *csd;
+    local_security_audit_state_t *csd;
     ibp_metadata_t *ibp_data;
 
 #ifdef MONITOR_ENTRY_RATE
@@ -307,7 +307,7 @@ crowd_safe_dispatch(dcontext_t *dcontext) {
 #ifdef DEBUG
             if (XSP(dcontext) != top->base_pointer) {
                 uint i;
-                local_crowd_safe_data_t *csd = GET_CS_DATA(dcontext);
+                local_security_audit_state_t *csd = GET_CS_DATA(dcontext);
                 shadow_stack_frame_t *entry;
                 for (i = 5; i > 0; i--) {
                     entry = SHADOW_FRAME(csd) - i;

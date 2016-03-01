@@ -1,6 +1,6 @@
 #include "execution_monitor.h"
-#include "../../core/options.h"
-#include "../../core/x86/instrument.h"
+//#include "../../core/options.h"
+//#include "../../core/x86/instrument.h"
 #include "indirect_link_hashtable.h"
 
 /**** Private Fields ****/

@@ -1,8 +1,8 @@
 #ifndef CROWD_SAFE_GENCODE_H
 #define CROWD_SAFE_GENCODE_H 1
 
-#include "../../core/globals.h"
-#include "../../core/x86/arch.h"
+//#include "../../core/globals.h"
+//#include "../../core/x86/arch.h"
 
 #define IBL_SETUP_BYTE_COUNT 0x16
 

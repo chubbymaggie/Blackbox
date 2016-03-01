@@ -1,6 +1,6 @@
-#include "../../core/globals.h"
-#include "../../core/fragment.h"
-#include "../../core/x86/instrument.h"
+//#include "../../core/globals.h"
+//#include "../../core/fragment.h"
+//#include "../../core/x86/instrument.h"
 #include "indirect_link_hashtable.h"
 #include "module_observer.h"
 #include "execution_monitor.h"
@@ -254,7 +254,7 @@ ibp_hash_global_init(dcontext_t *dcontext) {
 
 void
 ibp_thread_init(dcontext_t *dcontext) {
-    local_crowd_safe_data_t *csd = GET_CS_DATA(dcontext);
+    local_security_audit_state_t *csd = GET_CS_DATA(dcontext);
     ASSERT(csd != NULL);
     csd->ibp_data.lookuptable = ibp_table->table;
     csd->ibp_data.hash_mask = ibp_table->hash_mask;
@@ -855,7 +855,7 @@ uibp_removed(void *p) {
 static inline void
 update_ibp_table_and_mask(dcontext_t *dcontext, ibp_table_t *htable) {
     uint i;
-    local_crowd_safe_data_t *csd;
+    local_security_audit_state_t *csd;
 
     for (i = 0; i < threads->entries; i++) {
         csd = GET_CS_DATA((dcontext_t*)threads->array[i]);
@@ -887,7 +887,7 @@ report_uibp(dcontext_t *dcontext, crowd_safe_thread_local_t *cstl, bool is_admit
     module_location_t *from_module, module_location_t *to_module, uint edge_index)
 {
     uint i;
-    local_crowd_safe_data_t *csd = GET_CS_DATA(dcontext);
+    local_security_audit_state_t *csd = GET_CS_DATA(dcontext);
     clock_type_t interval, uibp_interval, suibp_interval;
 
     ASSERT_TAG_XREF_LOCK

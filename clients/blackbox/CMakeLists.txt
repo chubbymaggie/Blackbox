@@ -30,94 +30,92 @@
 
 cmake_minimum_required(VERSION 2.6)
 
-# where to put this?
-#option(SECURITY_AUDIT, "build with security audit hooks" OFF)
-#if (SECURITY_AUDIT)
-#  add_definitions(-DSECURITY_AUDIT)
-#endif(SECURITY_AUDIT)
+if (SECURITY_AUDIT) # around whole file
 
-add_definitions(-DJITOPT_NARROW_VMAREAS)
+  add_definitions(-DJITOPT_NARROW_VMAREAS)
 
-# add blackbox client
-if (STATIC_LIBRARY)
-  set(libtype STATIC)
-else()
-  set(libtype SHARED)
-endif ()
+  # add blackbox client
+  if (STATIC_LIBRARY)
+    set(libtype STATIC)
+  else()
+    set(libtype SHARED)
+  endif ()
 
-add_library(blackbox ${libtype}
-  blackbox.c
-  crowd_safe_util.c
-  basic_block_hashtable.c
-  basic_block_observer.c
-  indirect_link_hashtable.c
-  indirect_link_observer.c
-  crowd_safe_gencode.c
-  crowd_safe_trace.c
-  link_observer.c
-  module_observer.c
-  network_monitor.c
-  image_execution_monitor.c
-  anonymous_execution_monitor.c
-  blacklist.c
-  # ? ../common/modules.c
-  # add more here
-  )
-configure_DynamoRIO_client(blackbox)
-use_DynamoRIO_extension(blackbox drcontainers)
-use_DynamoRIO_extension(blackbox drsyms)
+  add_library(blackbox ${libtype}
+    blackbox.c
+    crowd_safe_util.c
+    basic_block_hashtable.c
+    basic_block_observer.c
+    indirect_link_hashtable.c
+    indirect_link_observer.c
+    crowd_safe_gencode.c
+    crowd_safe_trace.c
+    link_observer.c
+    module_observer.c
+    network_monitor.c
+    image_execution_monitor.c
+    anonymous_execution_monitor.c
+    blacklist.c
+    # ? ../common/modules.c
+    # add more here
+    )
+  configure_DynamoRIO_client(blackbox)
+  use_DynamoRIO_extension(blackbox drcontainers)
+  use_DynamoRIO_extension(blackbox drsyms)
 
-# ensure we rebuild if includes change
-add_dependencies(blackbox api_headers)
+  # ensure we rebuild if includes change
+  add_dependencies(blackbox api_headers)
 
-# Provide a hint for how to use the client
-if (NOT DynamoRIO_INTERNAL OR NOT "${CMAKE_GENERATOR}" MATCHES "Ninja")
-  add_custom_command(TARGET blackbox
-    POST_BUILD
-    COMMAND ${CMAKE_COMMAND}
-    ARGS -E echo "Usage: pass to drconfig or drrun: -t blackbox"
-    VERBATIM)
-endif ()
+  # Provide a hint for how to use the client
+  if (NOT DynamoRIO_INTERNAL OR NOT "${CMAKE_GENERATOR}" MATCHES "Ninja")
+    add_custom_command(TARGET blackbox
+      POST_BUILD
+      COMMAND ${CMAKE_COMMAND}
+      ARGS -E echo "Usage: pass to drconfig or drrun: -t blackbox"
+      VERBATIM)
+  endif ()
 
-if (WIN32 AND GENERATE_PDBS)
-  # I believe it's the lack of CMAKE_BUILD_TYPE that's eliminating this?
-  # In any case we make sure to add it (for release and debug, to get pdb):
-  append_property_string(TARGET blackbox LINK_FLAGS "/debug")
-endif (WIN32 AND GENERATE_PDBS)
+  if (WIN32 AND GENERATE_PDBS)
+    # I believe it's the lack of CMAKE_BUILD_TYPE that's eliminating this?
+    # In any case we make sure to add it (for release and debug, to get pdb):
+    append_property_string(TARGET blackbox LINK_FLAGS "/debug")
+  endif (WIN32 AND GENERATE_PDBS)
 
-DR_export_target(blackbox)
-install_exported_target(blackbox ${INSTALL_CLIENTS_LIB})
+  DR_export_target(blackbox)
+  install_exported_target(blackbox ${INSTALL_CLIENTS_LIB})
 
-DR_install(DIRECTORY "${DR_LIBRARY_OUTPUT_DIRECTORY}/"
-  DESTINATION "${INSTALL_CLIENTS_BIN}"
-  FILES_MATCHING
-  PATTERN "dynamorio.dll" PATTERN "libdynamorio.so*"
-  PATTERN "lib*.debug" EXCLUDE)
-if (NOT DR_EXT_DRSYMS_STATIC)
-  DR_install(DIRECTORY
-    "${DR_LIBRARY_OUTPUT_DIRECTORY}/../../ext/${INSTALL_LIB}/"
+  DR_install(DIRECTORY "${DR_LIBRARY_OUTPUT_DIRECTORY}/"
     DESTINATION "${INSTALL_CLIENTS_BIN}"
     FILES_MATCHING
-    PATTERN "drsyms.dll" PATTERN "libdrsyms.so*"
+    PATTERN "dynamorio.dll" PATTERN "libdynamorio.so*"
     PATTERN "lib*.debug" EXCLUDE)
-endif (NOT DR_EXT_DRSYMS_STATIC)
+  if (NOT DR_EXT_DRSYMS_STATIC)
+    DR_install(DIRECTORY
+      "${DR_LIBRARY_OUTPUT_DIRECTORY}/../../ext/${INSTALL_LIB}/"
+      DESTINATION "${INSTALL_CLIENTS_BIN}"
+      FILES_MATCHING
+      PATTERN "drsyms.dll" PATTERN "libdrsyms.so*"
+      PATTERN "lib*.debug" EXCLUDE)
+  endif (NOT DR_EXT_DRSYMS_STATIC)
 
-set(INSTALL_BLACKBOX_CONFIG ${INSTALL_CLIENTS_BASE})
+  set(INSTALL_BLACKBOX_CONFIG ${INSTALL_CLIENTS_BASE})
 
-if (UNIX)
-  set(LIB_EXT ".so")
-  set(LIB_PFX "lib")
-else (UNIX)
-  set(LIB_EXT ".dll")
-  set(LIB_PFX "")
-endif (UNIX)
+  if (UNIX)
+    set(LIB_EXT ".so")
+    set(LIB_PFX "lib")
+  else (UNIX)
+    set(LIB_EXT ".dll")
+    set(LIB_PFX "")
+  endif (UNIX)
 
-#file(WRITE  ${CONFIG} "# blackbox tool config file\n")
-#file(APPEND ${CONFIG} "# DynamoRIO options\n")
-#file(APPEND ${CONFIG} "DR_OP=\n") # need this? -nop_initial_bblock\n")
-#file(APPEND ${CONFIG} "# client tool path\n")
-#file(APPEND ${CONFIG} "CLIENT_REL=${INSTALL_CLIENTS_LIB}/${LIB_PFX}blackbox${LIB_EXT}\n")
-#file(APPEND ${CONFIG} "# client tool options\n")
-#file(APPEND ${CONFIG} "TOOL_OP=\n")
+  #file(WRITE  ${CONFIG} "# blackbox tool config file\n")
+  #file(APPEND ${CONFIG} "# DynamoRIO options\n")
+  #file(APPEND ${CONFIG} "DR_OP=\n") # need this? -nop_initial_bblock\n")
+  #file(APPEND ${CONFIG} "# client tool path\n")
+  #file(APPEND ${CONFIG} "CLIENT_REL=${INSTALL_CLIENTS_LIB}/${LIB_PFX}blackbox${LIB_EXT}\n")
+  #file(APPEND ${CONFIG} "# client tool options\n")
+  #file(APPEND ${CONFIG} "TOOL_OP=\n")
 
-DR_install(FILES "${CONFIG}" DESTINATION ${INSTALL_BLACKBOX_CONFIG})
+  DR_install(FILES "${CONFIG}" DESTINATION ${INSTALL_BLACKBOX_CONFIG})
+
+endif (SECURITY_AUDIT)

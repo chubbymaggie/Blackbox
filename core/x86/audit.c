@@ -64,6 +64,13 @@ dr_register_audit_callbacks(audit_callbacks_t *callbacks)
     audit_callbacks = callbacks;
 }
 
+DR_API
+app_pc
+dcontext_get_next_tag(dcontext_t *dcontext)
+{
+    return dcontext->next_tag;
+}
+
 static void
 audit_noop()
 {

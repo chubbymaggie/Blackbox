@@ -179,24 +179,26 @@ if ($header) {
      "$core/instrlist.h",
      "$core/lib/globals_shared.h", # defs
      "$core/globals.h",
-     "$core/x86/arch_exports.h", # encode routines
+     "$core/x86/arch_exports.h",   # encode routines
      "$core/x86/proc.h",
-     "$core/os_shared.h",        # before instrument.h
-     "$core/module_shared.h",    # before instrument.h
+     "$core/os_shared.h",          # before instrument.h
+     "$core/module_shared.h",      # before instrument.h
      "$core/x86/instrument.h",
      "$core/x86/instr.h",
      "$core/x86/instr_inline.h",
      "$core/x86/instr_create.h",
-     "$core/x86/decode.h",       # OPSZ_ consts, decode routines
-     "$core/x86/decode_fast.h",  # decode routines
-     "$core/x86/disassemble.h",  # disassemble routines
-     "$core/link.h",             # linkstub_t
-     "$core/fragment.h",         # fragment_t, binary tracedump format
-     "$core/win32/os_private.h", # rsrc section walking
-     "$core/hotpatch.c",         # probe api
+     "$core/x86/decode.h",         # OPSZ_ consts, decode routines
+     "$core/x86/decode_fast.h",    # decode routines
+     "$core/x86/disassemble.h",    # disassemble routines
+     "$core/link.h",               # linkstub_t
+     "$core/fragment.h",           # fragment_t, binary tracedump format
+     "$core/win32/os_private.h",   # rsrc section walking
+     "$core/hotpatch.c",           # probe api
      "$core/lib/dr_config.h",
      "$core/lib/dr_inject.h",
-     "$core/x86/audit.h",        # security audit callbacks
+     "$core/win32/ntdll_types.h",  # Windows type definitions
+     "$core/win32/ntdll.h",        # Windows type definitions
+     "$core/x86/audit.h",          # security audit callbacks
      );
 
 # PR 214947: VMware retroactively holds the copyright.

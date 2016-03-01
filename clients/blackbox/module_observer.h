@@ -11,9 +11,9 @@
 #ifdef UNIX
 # include <link.h>
 #endif
-#include "../../core/globals.h"
-#include "../../core/fragment.h"
-#include "../../core/module_shared.h"
+//#include "../../core/globals.h"
+//#include "../../core/fragment.h"
+//#include "../../core/module_shared.h"
 #include "basic_block_observer.h"
 #include "crowd_safe_util.h"
 

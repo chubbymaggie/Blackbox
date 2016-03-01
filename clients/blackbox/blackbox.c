@@ -142,9 +142,9 @@ audit_wait_for_multiple_objects(dcontext_t *dcontext, uint result, uint handle_c
 #endif
 
 static void
-audit_init_log(bool is_fork)
+audit_init_log(bool is_fork, bool is_wow64_process)
 {
-    init_crowd_safe_log(is_fork);
+    init_crowd_safe_log(is_fork, is_wow64_process);
 }
 
 static file_t
@@ -414,6 +414,19 @@ static audit_callbacks_t callbacks = {
     audit_wait_for_multiple_objects
 };
 
+#define MAX_MONITOR_DATASET_DIR_LEN 256
+
+uint crowd_safe_options;
+const char monitor_dataset_dir[MAX_MONITOR_DATASET_DIR_LEN];
+
+static inline bool
+has_option(const char *option)
+{
+    uint64 option_value;
+
+    return dr_get_integer_option(option, &option_value);
+}
+
 DR_EXPORT void
 dr_init(client_id_t id)
 {
@@ -421,4 +434,46 @@ dr_init(client_id_t id)
 
     dr_register_exit_event(event_exit);
     dr_register_audit_callbacks(&callbacks);
+
+    monitor_dataset_dir = NULL;
+
+    crowd_safe_options |= CROWD_SAFE_BB_GRAPH_OPTION;
+
+    dr_get_string_option("dataset_home",
+                         monitor_dataset_dir, MAX_MONITOR_DATASET_DIR_LEN)
+
+    if (has_option("monitor")) {
+        crowd_safe_options |= CROWD_SAFE_MONITOR_OPTION;
+
+        /*
+        alarm_type = dr_get_integer_option(alarm);
+        if (alarm_type > ALARM_OFF) {
+#ifdef MONITOR_UNEXPECTED_IBP
+            crowd_safe_options |= CROWD_SAFE_ALARM_OPTION;
+#else
+            CS_ERR("Request for alarm type %d is ignored because unexpected IBP are not monitored in this build. "
+                "Requires #define MONITOR_UNEXPECTED_IBP\n", alarm_type);
+#endif
+        }
+        */
+    }
+
+    if (has_option("xhash"))
+        crowd_safe_options |= CROWD_SAFE_RECORD_XHASH_OPTION;
+    if (has_option("netmon"))
+        crowd_safe_options |= CROWD_SAFE_NETWORK_MONITOR_OPTION;
+    if (has_option("meta_on_clock"))
+        crowd_safe_options |= CROWD_SAFE_META_ON_CLOCK_OPTION;
+
+    /*
+    OPTION_DEFAULT(uint, bb_analysis_level, 0U,
+        "output control for the bb analysis log")
+    OPTION_DEFAULT(bool, monitor, false, "monitor control flow")
+    OPTION_DEFAULT(pathstring_t, dataset_home, EMPTY_STRING,
+        "path to the target's dataset home directory")
+    OPTION_DEFAULT(bool, netmon, false, "monitor network")
+    OPTION_DEFAULT(bool, xhash, false, "record cross-module hashcodes")
+    OPTION_DEFAULT(bool, wdb_script, false, "windbg script")
+    OPTION_DEFAULT(bool, meta_on_clock, false, "write metadata on clock tick")
+    */
 }

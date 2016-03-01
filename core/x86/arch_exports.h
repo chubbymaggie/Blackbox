@@ -67,6 +67,9 @@
 /* Number of slots for spills from inlined clean calls. */
 #define CLEANCALL_NUM_INLINE_SLOTS 5
 
+/* DR_API EXPORT TOFILE dr_audit.h */
+/* DR_API EXPORT BEGIN */
+
 typedef enum {
     IBL_NONE = -1,
     /* N.B.: order determines which table is on 2nd cache line in local_state_t */
@@ -138,6 +141,7 @@ typedef struct _local_state_t {
 } local_state_t;
 
 #ifdef SECURITY_AUDIT
+
 typedef struct _shadow_stack_frame_t {
     app_pc return_address;
     app_pc base_pointer;
@@ -165,6 +169,7 @@ typedef struct _local_security_audit_state_t {
     uint stack_spy_mark;
     ibp_metadata_t ibp_data;
 } local_security_audit_state_t;
+
 #endif
 
 typedef struct _local_state_extended_t {
@@ -174,6 +179,8 @@ typedef struct _local_state_extended_t {
     _local_security_audit_state_t security_audit_state;
 #endif
 } local_state_extended_t;
+
+/* DR_API EXPORT END */
 
 /* local_state_[extended_]t is allocated in os-specific thread-local storage (TLS),
  * accessible off of fs:.  But, the actual segment offset varies, so

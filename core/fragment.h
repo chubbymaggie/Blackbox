@@ -184,6 +184,7 @@ enum { MAX_FRAGMENT_SIZE = USHRT_MAX };
 
 #ifdef API_EXPORT_ONLY
 typedef void * translation_info_t;
+typedef struct _trace_t trace_t;
 #endif
 
 /* fragment structure used for basic blocks and traces
@@ -256,8 +257,6 @@ struct _fragment_t {
 #endif
 }; /* fragment_t */
 
-/* DR_API EXPORT END */
-
 /* Shared fragments don't need some fields that private ones do, so we
  * dynamically choose different structs.  fragment_t is for shared only.
  * Here we again use C awkwardness to have a subclass.
@@ -324,6 +323,8 @@ typedef struct _private_trace_t {
     private_fragment_t  f;
     trace_only_t        t;
 } private_trace_t;
+
+/* DR_API EXPORT END */
 
 /* convenient way to deal w/ trace fields: this returns trace_only_t* */
 #define TRACE_FIELDS(f) (ASSERT(TEST(FRAG_IS_TRACE, (f)->flags)), \
@@ -515,6 +516,9 @@ typedef struct _per_thread_t {
     (f->start_pc + f->prefix_size - FRAGMENT_BASE_PREFIX_SIZE(f->flags))
 #define FCACHE_IBT_ENTRY_PC(f) (f->start_pc)
 
+/* DR_API EXPORT TOFILE dr_audit.h */
+/* DR_API EXPORT BEGIN */
+
 /* translation info pointer can be at end of any struct, so rather than have
  * 8 different structs we keep it out of the formal struct definitions
  */
@@ -528,6 +532,8 @@ typedef struct _per_thread_t {
    (TEST(FRAG_FAKE, (f)->flags) ? \
     (ASSERT(false && "fake fragment_t has no exit stubs!"), (linkstub_t *)NULL) : \
     ((linkstub_t *)(((byte*)(f)) + FRAGMENT_STRUCT_SIZE((f)->flags))))
+
+/* DR_API EXPORT END */
 
 /* selfmod copy size is stored at very end of fragment space */
 #define FRAGMENT_SELFMOD_COPY_SIZE(f)                \

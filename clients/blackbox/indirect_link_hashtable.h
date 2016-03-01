@@ -27,7 +27,7 @@
  * indirect_link_observer).
  */
 
-#include "../../core/hashtable.h"
+//#include "../../core/hashtable.h"
 #include "crowd_safe_util.h"
 
 /**** Public Types ****/

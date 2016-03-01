@@ -1,8 +1,8 @@
 #ifndef INDIRECT_LINK_OBSERVER_H
 #define INDIRECT_LINK_OBSERVER_H 1
 
-#include "../../core/globals.h"
-#include "../../core/x86/arch.h"
+//#include "../../core/globals.h"
+//#include "../../core/x86/arch.h"
 
 #ifdef X64
 # define SHADOW_STACK_SENTINEL 0ULL

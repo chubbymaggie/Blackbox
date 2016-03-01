@@ -238,9 +238,6 @@ typedef struct _direct_linkstub_t {
     cache_pc       stub_pc;
 } direct_linkstub_t;
 
-/* DR_API EXPORT END */
-
-
 /* linkage info for cbr fallthrough exits that satisfy two conditions:
  *   1) separate stubs will not be individually freed -- we could
  *      have a fancy scheme that frees both at once, but we simply
@@ -293,6 +290,8 @@ typedef struct _post_linkstub_t {
     ushort         padding;
 } post_linkstub_t;
 
+/* DR_API EXPORT END */
+
 /* For chaining together a list of inter-coarse-unit incoming stubs.  To
  * eliminate the need for wrappers for a series of fine-grained linkstubs, we
  * directly chain those -- so when walking, walk a fine entry's linkstubs
@@ -306,6 +305,9 @@ typedef struct _coarse_incoming_t {
     bool coarse;
     struct _coarse_incoming_t *next;
 } coarse_incoming_t;
+
+/* DR_API EXPORT TOFILE dr_audit.h */
+/* DR_API EXPORT BEGIN */
 
 /* this one does not take in flags b/c historically we used other fields */
 #define LINKSTUB_FAKE(l) (TEST(LINK_FAKE, (l)->flags))
@@ -339,6 +341,8 @@ typedef struct _coarse_incoming_t {
 #define LINKSTUB_NEXT_EXIT(l) \
     ((LINKSTUB_FINAL((l))) ? NULL : \
         ((linkstub_t *) (((byte*)(l)) + LINKSTUB_SIZE(l))))
+
+/* DR_API EXPORT END */
 
 /* we pay the cost of the check in release builds to have the
  * safety return value of NULL

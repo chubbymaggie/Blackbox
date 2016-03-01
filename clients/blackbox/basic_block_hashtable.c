@@ -1,5 +1,5 @@
 #include "basic_block_hashtable.h"
-#include "../../core/x86/instrument.h"
+//#include "../../core/x86/instrument.h"
 #include "crowd_safe_util.h"
 
 #define HASHTABLE_NAME_KEY bb_hashtable

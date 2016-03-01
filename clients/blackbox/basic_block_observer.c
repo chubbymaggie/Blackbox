@@ -1,10 +1,10 @@
 #include "basic_block_observer.h"
-#include "../../core/fragment.h" // cs-hack
-#include "../../core/x86/arch.h"
-#include "../../core/x86/instr.h"
-#include "../../core/x86/instrument.h"
-#include "../../core/x86/instr_create.h"
-#include "../../core/x86/disassemble.h"
+//#include "../../core/fragment.h" // cs-hack
+//#include "../../core/x86/arch.h"
+//#include "../../core/x86/instr.h"
+//#include "../../core/x86/instrument.h"
+//#include "../../core/x86/instr_create.h"
+//#include "../../core/x86/disassemble.h"
 #include "link_observer.h"
 #include "module_observer.h"
 #include "crowd_safe_util.h"

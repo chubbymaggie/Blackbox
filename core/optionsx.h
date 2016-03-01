@@ -722,16 +722,6 @@
     OPTION_DEFAULT_INTERNAL(uint, trace_counter_on_delete, 0U,
         "trace head counter will be reset to this value upon trace deletion")
 
-    OPTION_DEFAULT(uint, bb_analysis_level, 0U,
-        "output control for the bb analysis log")
-    OPTION_DEFAULT(bool, monitor, false, "monitor control flow")
-    OPTION_DEFAULT(pathstring_t, dataset_home, EMPTY_STRING,
-        "path to the target's dataset home directory")
-    OPTION_DEFAULT(bool, netmon, false, "monitor network")
-    OPTION_DEFAULT(bool, xhash, false, "record cross-module hashcodes")
-    OPTION_DEFAULT(bool, wdb_script, false, "windbg script")
-    OPTION_DEFAULT(bool, meta_on_clock, false, "write metadata on clock tick")
-
     OPTION_DEFAULT(uint, max_elide_jmp,  16,
         "maximum direct jumps to elide in a basic block")
     OPTION_DEFAULT(uint, max_elide_call, 16,

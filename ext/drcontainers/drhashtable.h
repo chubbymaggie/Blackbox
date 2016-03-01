@@ -6,18 +6,18 @@
 /*
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
- * 
+ *
  * * Redistributions of source code must retain the above copyright notice,
  *   this list of conditions and the following disclaimer.
- * 
+ *
  * * Redistributions in binary form must reproduce the above copyright notice,
  *   this list of conditions and the following disclaimer in the documentation
  *   and/or other materials provided with the distribution.
- * 
+ *
  * * Neither the name of VMware, Inc. nor the names of its contributors may be
  *   used to endorse or promote products derived from this software without
  *   specific prior written permission.
- * 
+ *
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
  * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
  * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
@@ -33,8 +33,8 @@
 
 /* Containers DynamoRIO Extension: Hashtable */
 
-#ifndef _HASHTABLE_H_
-#define _HASHTABLE_H_ 1
+#if defined(HASHTABLE_NAME_KEY) || !defined(_EXT_HASHTABLE_H_)
+#define _EXT_HASHTABLE_H_ 1
 
 /**
  * @file hashtable.h
@@ -45,6 +45,8 @@
 extern "C" {
 #endif
 
+#include "dr_api.h"
+
 /***************************************************************************
  * HASHTABLE
  */
@@ -54,6 +56,39 @@ extern "C" {
  */
 /*@{*/ /* begin doxygen group */
 
+#ifndef HASHTABLE_NAME_KEY
+# define HASHTABLE_NAME_KEY hashtable
+#endif
+#define NAME_KEY HASHTABLE_NAME_KEY
+
+#ifndef HASHTABLE_KEY_TYPE
+# define HASHTABLE_KEY_TYPE void*
+#endif
+#define KEY_TYPE HASHTABLE_KEY_TYPE
+
+#ifdef HASHTABLE_PAYLOAD_TYPE
+# define CUSTOM_PAYLOAD_TYPE 1
+#endif
+
+#ifndef HASHTABLE_PAYLOAD_TYPE
+# define HASHTABLE_PAYLOAD_TYPE void*
+# define HASHTABLE_PAYLOAD_IS_POINTER 1
+#endif
+#define PAYLOAD_TYPE HASHTABLE_PAYLOAD_TYPE
+
+#ifdef HASHTABLE_PAYLOAD_IS_POINTER
+# define _IF_PAYLOAD_INLINE(x)
+#else
+# define _IF_PAYLOAD_INLINE(x) x
+#endif
+
+#define HASHTABLE_EXPAND_KEY(pre, key, post) pre##key##post
+#define HASHTABLE_NAME(pre, name, post) HASHTABLE_EXPAND_KEY(pre, name, post)
+#define HASHTABLE_TYPE HASHTABLE_NAME(,NAME_KEY,_t)
+
+#ifndef _EXT_HASHTABLE_SHARED
+#define _EXT_HASHTABLE_SHARED 1
+
 /** The type of hash key */
 typedef enum {
     HASH_INTPTR,        /**< A pointer-sized integer or pointer */
@@ -62,18 +97,12 @@ typedef enum {
     /**
      * A custom key.  Hash and compare operations must be provided
      * in hashtable_init_ex().  The hash operation can return a full
-     * uint, as its result will be truncated via a mod of the 
+     * uint, as its result will be truncated via a mod of the
      * hash key bit size.  This allows for resizing the table
      * without changing the hash operation.
      */
     HASH_CUSTOM,
 } hash_type_t;
-
-typedef struct _hash_entry_t {
-    void *key;
-    void *payload;
-    struct _hash_entry_t *next;
-} hash_entry_t;
 
 /** Configuration parameters for a hashtable. */
 typedef struct _hashtable_config_t {
@@ -82,139 +111,7 @@ typedef struct _hashtable_config_t {
     uint resize_threshold; /**< Resize the table at this % full */
 } hashtable_config_t;
 
-typedef struct _hashtable_t {
-    hash_entry_t **table;
-    hash_type_t hashtype;
-    bool str_dup;
-    void *lock;
-    uint table_bits;
-    bool synch;
-    void (*free_payload_func)(void*);
-    uint (*hash_key_func)(void*);
-    bool (*cmp_key_func)(void*, void*);
-    uint entries;
-    hashtable_config_t config;
-    uint persist_count;
-} hashtable_t;
 
-/* should move back to utils.c once have iterator and alloc_exit
- * doesn't need this macro
- */
-#define HASHTABLE_SIZE(num_bits) (1U << (num_bits))
-
-/** Caseless string compare */
-bool
-stri_eq(const char *s1, const char *s2);
-
-/**
- * The hashtable has parametrized heap and assert routines for flexibility.
- * This routine must be called BEFORE any other hashtable_ routine; else,
- * the defaults will be used.
- */
-void
-hashtable_global_config(void *(*alloc_func)(size_t), void (*free_func)(void*, size_t),
-                        void (*assert_fail_func)(const char *));
-
-/**
- * Initializes a hashtable with the given size, hash type, and whether to
- * duplicate string keys.  All operations are synchronized by default.
- */
-void
-hashtable_init(hashtable_t *table, uint num_bits, hash_type_t hashtype, bool str_dup);
-
-/**
- * Initializes a hashtable with the given parameters.
- *
- * @param[out] table     The hashtable to be initialized.
- * @param[in]  num_bits  The initial number of bits to use for the hash key
- *   which determines the initial size of the table itself.  The result of the
- *   hash function will be truncated to this size.  This size will be
- *   increased when the table is resized (resizing always doubles the size).
- * @param[in]  hashtype  The type of hash to perform.
- * @param[in]  str_dup   Whether to duplicate string keys.
- * @param[in]  synch     Whether to synchronize each operation.
- *   Even when \p synch is false, the hashtable's lock is initialized and can
- *   be used via hashtable_lock() and hashtable_unlock(), allowing the caller
- *   to extend synchronization beyond just the operation in question, to
- *   include accessing a looked-up payload, e.g.
- * @param[in]  free_payload_func   A callback for freeing each payload.
- *   Leave it NULL if no callback is needed.
- * @param[in]  hash_key_func       A callback for hashing a key.
- *   Leave it NULL if no callback is needed and the default is to be used.
- *   For HASH_CUSTOM, a callback must be provided.
- *   The hash operation can return a full uint, as its result will be
- *   truncated via a mod of the hash key bit size.  This allows for resizing
- *   the table without changing the hash operation.
- * @param[in]  cmp_key_func        A callback for comparing two keys.
- *   Leave it NULL if no callback is needed and the default is to be used.
- *   For HASH_CUSTOM, a callback must be provided.
- */
-void
-hashtable_init_ex(hashtable_t *table, uint num_bits, hash_type_t hashtype,
-                  bool str_dup, bool synch, void (*free_payload_func)(void*),
-                  uint (*hash_key_func)(void*), bool (*cmp_key_func)(void*, void*));
-
-/** Configures optional parameters of hashtable operation. */
-void
-hashtable_configure(hashtable_t *table, hashtable_config_t *config);
-
-/** Returns the payload for the given key, or NULL if the key is not found */
-void *
-hashtable_lookup(hashtable_t *table, void *key);
-
-/**
- * Adds a new entry.  Returns false if an entry for \p key already exists.
- * \note Never use NULL as a payload as that is used for a lookup failure.
- */
-bool
-hashtable_add(hashtable_t *table, void *key, void *payload);
-
-/**
- * Adds a new entry, replacing an existing entry if any.
- * \note Never use NULL as a payload as that is used for a lookup failure.
- */
-void *
-hashtable_add_replace(hashtable_t *table, void *key, void *payload);
-
-/**
- * Removes the entry for key.  If free_payload_func was specified calls it
- * for the payload being removed.  Returns false if no such entry
- * exists.
- */
-bool
-hashtable_remove(hashtable_t *table, void *key);
-
-/**
- * Removes all entries with key in [start..end).  If free_payload_func
- * was specified calls it for each payload being removed.  Returns
- * false if no such entry exists.
- */
-bool
-hashtable_remove_range(hashtable_t *table, void *start, void *end);
-
-/**
- * Removes all entries from the table.  If free_payload_func was specified
- * calls it for each payload.
- */
-void
-hashtable_clear(hashtable_t *table);
-
-/**
- * Destroys all storage for the table, including all entries and the
- * table itself.  If free_payload_func was specified calls it for each
- * payload.
- */
-void
-hashtable_delete(hashtable_t *table);
-
-/** Acquires the hashtable lock. */
-void
-hashtable_lock(hashtable_t *table);
-
-/** Releases the hashtable lock. */
-void
-hashtable_unlock(hashtable_t *table);
-    
 /* DR_API EXPORT BEGIN */
 /** Flags to control hashtable persistence */
 typedef enum {
@@ -258,8 +155,165 @@ typedef enum {
     DR_HASHPERS_ONLY_PERSISTED          = 0x0010,
 } hasthable_persist_flags_t;
 /* DR_API EXPORT END */
+#endif
 
-/** 
+#ifndef HASHTABLE_PAYLOAD_IS_POINTER
+# pragma pack(push, 4)
+#endif
+
+typedef struct HASHTABLE_NAME(_,NAME_KEY,_entry_t) {
+    KEY_TYPE key;
+    PAYLOAD_TYPE payload;
+    struct HASHTABLE_NAME(_,NAME_KEY,_entry_t) *next;
+} HASHTABLE_NAME(,NAME_KEY,_entry_t);
+
+#ifndef HASHTABLE_PAYLOAD_IS_POINTER
+# pragma pack(pop)
+#endif
+
+typedef struct HASHTABLE_NAME(_,NAME_KEY,_t) {
+    HASHTABLE_NAME(,NAME_KEY,_entry_t) **table;
+    hash_type_t hashtype;
+    bool str_dup;
+    void *lock;
+    uint table_bits;
+    bool synch;
+    void (*free_payload_func)(PAYLOAD_TYPE);
+    uint (*hash_key_func)(KEY_TYPE);
+    bool (*cmp_key_func)(KEY_TYPE, KEY_TYPE);
+    uint entries;
+    hashtable_config_t config;
+    uint persist_count;
+} HASHTABLE_TYPE;
+
+/* should move back to utils.c once have iterator and alloc_exit
+ * doesn't need this macro
+ */
+#define HASHTABLE_SIZE(num_bits) (1U << (num_bits))
+
+/** Caseless string compare */
+bool
+HASHTABLE_NAME(,NAME_KEY,_stri_eq)(const char *s1, const char *s2);
+
+/**
+ * The hashtable has parametrized heap and assert routines for flexibility.
+ * This routine must be called BEFORE any other hashtable_ routine; else,
+ * the defaults will be used.
+ */
+void
+HASHTABLE_NAME(,NAME_KEY,_global_config)(PAYLOAD_TYPE (*alloc_func)(size_t), void (*free_func)(PAYLOAD_TYPE, size_t),
+                        void (*assert_fail_func)(const char *));
+
+/**
+ * Initializes a hashtable with the given size, hash type, and whether to
+ * duplicate string keys.  All operations are synchronized by default.
+ */
+void
+HASHTABLE_NAME(,NAME_KEY,_init)(HASHTABLE_TYPE *table, uint num_bits, hash_type_t hashtype, bool str_dup);
+
+/**
+ * Initializes a hashtable with the given parameters.
+ *
+ * @param[out] table     The hashtable to be initialized.
+ * @param[in]  num_bits  The initial number of bits to use for the hash key
+ *   which determines the initial size of the table itself.  The result of the
+ *   hash function will be truncated to this size.  This size will be
+ *   increased when the table is resized (resizing always doubles the size).
+ * @param[in]  hashtype  The type of hash to perform.
+ * @param[in]  str_dup   Whether to duplicate string keys.
+ * @param[in]  synch     Whether to synchronize each operation.
+ *   Even when \p synch is false, the hashtable's lock is initialized and can
+ *   be used via hashtable_lock() and hashtable_unlock(), allowing the caller
+ *   to extend synchronization beyond just the operation in question, to
+ *   include accessing a looked-up payload, e.g.
+ * @param[in]  free_payload_func   A callback for freeing each payload.
+ *   Leave it NULL if no callback is needed.
+ * @param[in]  hash_key_func       A callback for hashing a key.
+ *   Leave it NULL if no callback is needed and the default is to be used.
+ *   For HASH_CUSTOM, a callback must be provided.
+ *   The hash operation can return a full uint, as its result will be
+ *   truncated via a mod of the hash key bit size.  This allows for resizing
+ *   the table without changing the hash operation.
+ * @param[in]  cmp_key_func        A callback for comparing two keys.
+ *   Leave it NULL if no callback is needed and the default is to be used.
+ *   For HASH_CUSTOM, a callback must be provided.
+ */
+void
+HASHTABLE_NAME(,NAME_KEY,_init_ex)(HASHTABLE_TYPE *table, uint num_bits, hash_type_t hashtype,
+                  bool str_dup, bool synch, void (*free_payload_func)(PAYLOAD_TYPE),
+                  uint (*hash_key_func)(KEY_TYPE), bool (*cmp_key_func)(KEY_TYPE, KEY_TYPE));
+
+/** Configures optional parameters of hashtable operation. */
+void
+HASHTABLE_NAME(,NAME_KEY,_configure)(HASHTABLE_TYPE *table, hashtable_config_t *config);
+
+/** Returns the payload for the given key, or NULL if the key is not found */
+PAYLOAD_TYPE _IF_PAYLOAD_INLINE(*)
+HASHTABLE_NAME(,NAME_KEY,_lookup)(HASHTABLE_TYPE *table, KEY_TYPE key);
+
+/* convenience version for inline entries */
+#ifndef HASHTABLE_PAYLOAD_IS_POINTER
+PAYLOAD_TYPE
+HASHTABLE_NAME(,NAME_KEY,_lookup_value)(HASHTABLE_TYPE *table, KEY_TYPE key);
+#endif
+
+/**
+ * Adds a new entry.  Returns false if an entry for \p key already exists.
+ * \note Never use NULL as a payload as that is used for a lookup failure.
+ */
+bool
+HASHTABLE_NAME(,NAME_KEY,_add)(HASHTABLE_TYPE *table, KEY_TYPE key, PAYLOAD_TYPE payload);
+
+/**
+ * Adds a new entry, replacing an existing entry if any. Returns a pointer to the removed entry
+ * if there is one, unless the table has inlined payload, in which case it returns a pointer to
+ * the inserted entry (either way it saves the caller a lookup to get the faraway handle).
+ * \note Never use NULL (or any HASHTABLE_IS_EMPTY) as a payload as that is used for a lookup failure.
+ */
+PAYLOAD_TYPE _IF_PAYLOAD_INLINE(*)
+HASHTABLE_NAME(,NAME_KEY,_add_replace)(HASHTABLE_TYPE *table, KEY_TYPE key, PAYLOAD_TYPE payload);
+
+/**
+ * Removes the entry for key.  If free_payload_func was specified calls it
+ * for the payload being removed.  Returns false if no such entry
+ * exists.
+ */
+bool
+HASHTABLE_NAME(,NAME_KEY,_remove)(HASHTABLE_TYPE *table, KEY_TYPE key);
+
+/**
+ * Removes all entries with key in [start..end).  If free_payload_func
+ * was specified calls it for each payload being removed.  Returns
+ * false if no such entry exists.
+ */
+bool
+HASHTABLE_NAME(,NAME_KEY,_remove_range)(HASHTABLE_TYPE *table, KEY_TYPE start, KEY_TYPE end);
+
+/**
+ * Removes all entries from the table.  If free_payload_func was specified
+ * calls it for each payload.
+ */
+void
+HASHTABLE_NAME(,NAME_KEY,_clear)(HASHTABLE_TYPE *table);
+
+/**
+ * Destroys all storage for the table, including all entries and the
+ * table itself.  If free_payload_func was specified calls it for each
+ * payload.
+ */
+void
+HASHTABLE_NAME(,NAME_KEY,_delete)(HASHTABLE_TYPE *table);
+
+/** Acquires the hashtable lock. */
+void
+HASHTABLE_NAME(,NAME_KEY,_lock)(HASHTABLE_TYPE *table);
+
+/** Releases the hashtable lock. */
+void
+HASHTABLE_NAME(,NAME_KEY,_unlock)(HASHTABLE_TYPE *table);
+
+#ifndef CUSTOM_PAYLOAD_TYPE
+/**
  * For use persisting a table of single-alloc entries (i.e., via a
  * shallow copy) for loading into a live table later.
  *
@@ -275,10 +329,10 @@ typedef enum {
  * @param[in] flags       Controls various aspects of the persistence
  */
 size_t
-hashtable_persist_size(void *drcontext, hashtable_t *table, size_t entry_size,
+HASHTABLE_NAME(,NAME_KEY,_persist_size)(void *drcontext, HASHTABLE_TYPE *table, size_t entry_size,
                        void *perscxt, hasthable_persist_flags_t flags);
 
-/** 
+/**
  * For use persisting a table of single-alloc entries (i.e., via a
  * shallow copy) for loading into a live table later.
  *
@@ -298,10 +352,10 @@ hashtable_persist_size(void *drcontext, hashtable_t *table, size_t entry_size,
  * @param[in] flags       Controls various aspects of the persistence
  */
 bool
-hashtable_persist(void *drcontext, hashtable_t *table, size_t entry_size,
+HASHTABLE_NAME(,NAME_KEY,_persist)(void *drcontext, HASHTABLE_TYPE *table, size_t entry_size,
                   file_t fd, void *perscxt, hasthable_persist_flags_t flags);
 
-/** 
+/**
  * For use persisting a table of single-alloc entries (i.e., via a
  * shallow copy) for loading into a live table later.
  *
@@ -319,11 +373,24 @@ hashtable_persist(void *drcontext, hashtable_t *table, size_t entry_size,
  *   it wishes invoke hashtable_add.
  */
 bool
-hashtable_resurrect(void *drcontext, byte **map /*INOUT*/, hashtable_t *table,
+HASHTABLE_NAME(,NAME_KEY,_resurrect)(void *drcontext, byte **map /*INOUT*/, HASHTABLE_TYPE *table,
                     size_t entry_size, void *perscxt, hasthable_persist_flags_t flags,
-                    bool (*process_payload)(void *key, void *payload, ptr_int_t shift));
+                    bool (*process_payload)(KEY_TYPE key, PAYLOAD_TYPE payload, ptr_int_t shift));
+#endif
 
 /*@}*/ /* end doxygen group */
+
+#undef NAME_KEY
+#undef HASHTABLE_NAME_KEY
+#undef KEY_TYPE
+#undef HASHTABLE_KEY_TYPE
+#undef PAYLOAD_TYPE
+#undef HASHTABLE_PAYLOAD_TYPE
+#undef HASHTABLE_PAYLOAD_IS_POINTER
+#undef _IF_PAYLOAD_INLINE
+#undef HASHTABLE_EXPAND_KEY
+#undef HASHTABLE_NAME
+#undef HASHTABLE_TYPE
 
 #ifdef __cplusplus
 }
