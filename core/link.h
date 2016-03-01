@@ -319,6 +319,9 @@ typedef struct _coarse_incoming_t {
     (!TEST(LINK_DIRECT, (flags)) && TEST(LINK_INDIRECT, (flags)))
 #define LINKSTUB_CBR_FALLTHROUGH(flags) \
     (TEST(LINK_DIRECT, (flags)) && TEST(LINK_INDIRECT, (flags)))
+#define LINKSTUB_SPECIAL(flags) \
+    (TESTANY(LINK_SPECIAL_EXIT | LINK_NI_SYSCALL \
+             IF_WINDOWS(| LINK_CALLBACK_RETURN | LINK_CALLBACK_RETURN), flags))
 
 /* used with both LINK_* and INSTR_*_EXIT flags */
 #define EXIT_IS_CALL(flags) (TEST(LINK_CALL, flags) && !TEST(LINK_JMP, flags))

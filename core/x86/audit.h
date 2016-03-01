@@ -38,16 +38,17 @@
 #include "../globals.h"
 #include "../fragment.h"
 #include "../synch.h"
+//#include "instrument.h"
 #include "instr.h"
 
 #ifdef WINDOWS
 # include "../win32/ntdll_types.h"
 #endif
 
-#define SEC_LOG(level, ...) \
+#define SEC_LOG(level, format, ...) \
 do { \
     if (audit_callbacks->loglevel >= level) \
-        drfprintf(*audit_callbacks->audit_log_file, __VA_ARGS__); \
+        dr_fprintf(*audit_callbacks->audit_log_file, format, __VA_ARGS__); \
 } while (0)
 
 /* DR_API EXPORT TOFILE dr_audit.h */
@@ -67,24 +68,25 @@ typedef linkstub_t * (*fcache_enter_func_t)(dcontext_t *dcontext);
 
 typedef struct _audit_callbacks_t {
     file_t *audit_log_file;
-    uint log_level;
+    uint loglevel;
     void (*audit_init)(dcontext_t *dcontext, bool is_fork);
     void (*audit_exit)();
     void (*audit_init_log)(bool is_fork, bool is_wow64_process);
-    void (*audit_create_logfile)();
+    file_t (*audit_create_logfile)();
     void (*audit_close_logfile)();
     void (*audit_dynamo_model_initialized)();
     void (*audit_thread_init)(dcontext_t *dcontext);
     void (*audit_thread_exit)(dcontext_t *dcontext);
-    void (*audit_process_fork)(dcontext_t *dcontext, const char *name);
+    void (*audit_process_fork)(dcontext_t *dcontext, const wchar_t *name);
     void (*audit_process_terminating)(bool external, bool is_crash, const char *file,
                                       int line, const char *expr);
     void (*audit_dispatch)(dcontext_t *dcontext);
     void (*audit_fcache_enter)(dcontext_t *dcontext);
-    void (*audit_fragment_link)(dcontext_t *dcontext, bool direct, byte exit_ordinal);
+    void (*audit_fragment_link)(dcontext_t *dcontext, bool direct);
     void (*audit_fragment_link_tags)(dcontext_t *dcontext, app_pc from_tag,
                                      app_pc to_tag, byte exit_ordinal);
-    void (*audit_syscall)(ptr_uint_t sysnum);
+    void (*audit_syscall)(dcontext_t *dcontext, app_pc tag, int syscall_number);
+    bool (*audit_filter_syscall)(int sysnum);
     void (*audit_bb_link_complete)(dcontext_t *dcontext, fragment_t *f);
     void (*audit_translation)(dcontext_t *dcontext, app_pc start_pc, instrlist_t *ilist,
                               int sysnum);
@@ -96,10 +98,10 @@ typedef struct _audit_callbacks_t {
                                       app_pc new_start, app_pc new_end,
                                       bool is_dynamo_areas);
     void (*audit_code_area)(dcontext_t *dcontext, app_pc start, app_pc end, bool created);
-    void (*audit_indirect_branchpoint)(dcontext_t *dcontext, instrlist_t *ilist,
+    uint (*audit_indirect_branchpoint)(dcontext_t *dcontext, instrlist_t *ilist,
                                        app_pc tag, instr_t *ibl_instr, bool is_return,
                                        int syscall_number);
-    void (*audit_return)(dcontext_t *dcontext, instrlist_t *ilist,
+    uint (*audit_return)(dcontext_t *dcontext, instrlist_t *ilist,
                          instr_t *next, app_pc tag);
     void (*audit_gencode_phase)(bool start);
     void (*audit_instr)(instr_t *instr, byte *copy_pc);
@@ -111,6 +113,8 @@ typedef struct _audit_callbacks_t {
                                                app_pc ibl_routine_start_pc);
     void (*audit_instrument_ibl_fcache_return)(dcontext_t *dcontext, instrlist_t *ilist,
                                                app_pc ibl_routine_start_pc);
+    app_pc (*audit_adjust_for_ibl_instrumentation)(dcontext_t *dcontext, app_pc pc,
+                                                   app_pc raw_start_pc);
     void (*audit_code_modification)(dcontext_t *dcontext, fragment_t *f, app_pc next_pc,
                                     app_pc target, size_t write_size);
     void (*audit_gencode_ibl_routine)(app_pc pc, bool syscall);
@@ -156,54 +160,81 @@ dcontext_get_next_tag(dcontext_t *dcontext);
 inline void
 audit_init(dcontext_t *dcontext, bool is_fork)
 {
+    if (audit_callbacks == NULL)
+        return;
+
     audit_callbacks->audit_init(dcontext, is_fork);
 }
 
 inline void
 audit_exit()
 {
+    if (audit_callbacks == NULL)
+        return;
+
     audit_callbacks->audit_exit();
 }
 
 inline void
 audit_init_log(bool is_fork, bool is_wow64_process)
 {
+    if (audit_callbacks == NULL)
+        return;
+
     audit_callbacks->audit_init_log(is_fork, is_wow64_process);
 }
 
 inline file_t
 audit_create_logfile()
 {
-    audit_callbacks->audit_create_logfile();
+    if (audit_callbacks == NULL)
+        return INVALID_FILE;
+
+    return audit_callbacks->audit_create_logfile();
 }
 
 inline void
 audit_close_logfile()
 {
+    if (audit_callbacks == NULL)
+        return;
+
     audit_callbacks->audit_close_logfile();
 }
 
 inline void
 audit_dynamo_model_initialized()
 {
+    if (audit_callbacks == NULL)
+        return;
+
     audit_callbacks->audit_dynamo_model_initialized();
 }
 
 inline void
 audit_thread_init(dcontext_t *dcontext)
 {
+    if (audit_callbacks == NULL)
+        return;
+
     audit_callbacks->audit_thread_init(dcontext);
 }
 
 inline void
 audit_thread_exit(dcontext_t *dcontext)
 {
+    if (audit_callbacks == NULL)
+        return;
+
     audit_callbacks->audit_thread_exit(dcontext);
 }
 
 inline void
-audit_process_fork(dcontext_t *dcontext, const char *name)
+audit_process_fork(dcontext_t *dcontext, const wchar_t *name)
 {
+    if (audit_callbacks == NULL)
+        return;
+
     audit_callbacks->audit_process_fork(dcontext, name);
 }
 
@@ -211,6 +242,9 @@ inline void
 audit_process_terminating(bool external, bool is_crash, const char *file,
                           int line, const char *expr)
 {
+    if (audit_callbacks == NULL)
+        return;
+
     audit_callbacks->audit_process_terminating(external, is_crash, file, line, expr);
 }
 
@@ -219,39 +253,66 @@ audit_process_terminating(bool external, bool is_crash, const char *file,
 inline void
 audit_dispatch(dcontext_t *dcontext)
 {
+    if (audit_callbacks == NULL)
+        return;
+
     audit_callbacks->audit_dispatch(dcontext);
 }
 
 inline void
 audit_fcache_enter(dcontext_t *dcontext)
 {
+    if (audit_callbacks == NULL)
+        return;
+
     audit_callbacks->audit_fcache_enter(dcontext);
 }
 
 /* links */
 
 inline void
-audit_fragment_link(dcontext_t *dcontext, bool direct, byte exit_ordinal)
+audit_fragment_link(dcontext_t *dcontext, bool direct)
 {
-    audit_callbacks->audit_fragment_link(dcontext, direct, exit_ordinal);
+    if (audit_callbacks == NULL)
+        return;
+
+    audit_callbacks->audit_fragment_link(dcontext, direct);
 }
 
 inline void
 audit_fragment_link_tags(dcontext_t *dcontext, app_pc from_tag, app_pc to_tag,
                          byte exit_ordinal)
 {
+    if (audit_callbacks == NULL)
+        return;
+
     audit_callbacks->audit_fragment_link_tags(dcontext, from_tag, to_tag, exit_ordinal);
 }
 
 inline void
-audit_syscall(ptr_uint_t sysnum)
+audit_syscall(dcontext_t *dcontext, app_pc tag, int syscall_number)
 {
-    audit_callbacks->audit_syscall(sysnum);
+    if (audit_callbacks == NULL)
+        return;
+
+    audit_callbacks->audit_syscall(dcontext, tag, syscall_number);
+}
+
+inline bool
+audit_filter_syscall(int sysnum)
+{
+    if (audit_callbacks == NULL)
+        return false/*ignore all sysnums*/;
+
+    return audit_callbacks->audit_filter_syscall(sysnum);
 }
 
 inline void
 audit_bb_link_complete(dcontext_t *dcontext, fragment_t *f)
 {
+    if (audit_callbacks == NULL)
+        return;
+
     audit_callbacks->audit_bb_link_complete(dcontext, f);
 }
 
@@ -260,18 +321,27 @@ audit_bb_link_complete(dcontext_t *dcontext, fragment_t *f)
 inline void
 audit_translation(dcontext_t *dcontext, app_pc start_pc, instrlist_t *ilist, int sysnum)
 {
+    if (audit_callbacks == NULL)
+        return;
+
     audit_callbacks->audit_translation(dcontext, start_pc, ilist, sysnum);
 }
 
 inline void
 audit_fragment_remove(dcontext_t *dcontext, fragment_t *f)
 {
+    if (audit_callbacks == NULL)
+        return;
+
     audit_callbacks->audit_fragment_remove(dcontext, f);
 }
 
 inline void
 audit_cache_reset(dcontext_t *dcontext)
 {
+    if (audit_callbacks == NULL)
+        return;
+
     audit_callbacks->audit_cache_reset(dcontext);
 }
 
@@ -281,6 +351,9 @@ inline void
 audit_memory_executable_change(dcontext_t *dcontext, app_pc base, size_t size,
                                bool becomes_executable, bool safe_to_read)
 {
+    if (audit_callbacks == NULL)
+        return;
+
     audit_callbacks->audit_memory_executable_change(dcontext, base, size,
                                                     becomes_executable, safe_to_read);
 }
@@ -289,6 +362,9 @@ inline void
 audit_code_area_expansion(app_pc original_start, app_pc original_end, app_pc new_start,
                           app_pc new_end, bool is_dynamo_areas)
 {
+    if (audit_callbacks == NULL)
+        return;
+
     audit_callbacks->audit_code_area_expansion(original_start, original_end, new_start,
                                                new_end, is_dynamo_areas);
 }
@@ -296,6 +372,9 @@ audit_code_area_expansion(app_pc original_start, app_pc original_end, app_pc new
 inline void
 audit_code_area(dcontext_t *dcontext, app_pc start, app_pc end, bool created)
 {
+    if (audit_callbacks == NULL)
+        return;
+
     audit_callbacks->audit_code_area(dcontext, start, end, created);
 }
 
@@ -305,14 +384,20 @@ inline uint
 audit_indirect_branchpoint(dcontext_t *dcontext, instrlist_t *ilist, app_pc tag,
                            instr_t *ibl_instr, bool is_return, int syscall_number)
 {
-    audit_callbacks->audit_indirect_branchpoint(dcontext, ilist, tag, ibl_instr,
-                                                is_return, syscall_number);
+    if (audit_callbacks == NULL)
+        return 0;
+
+    return audit_callbacks->audit_indirect_branchpoint(dcontext, ilist, tag, ibl_instr,
+                                                       is_return, syscall_number);
 }
 
 inline uint
 audit_return(dcontext_t *dcontext, instrlist_t *ilist, instr_t *next, app_pc tag)
 {
-    audit_callbacks->audit_return(dcontext, ilist, next, tag);
+    if (audit_callbacks == NULL)
+        return 0;
+
+    return audit_callbacks->audit_return(dcontext, ilist, next, tag);
 }
 
 /* ibl gencode */
@@ -320,12 +405,18 @@ audit_return(dcontext_t *dcontext, instrlist_t *ilist, instr_t *next, app_pc tag
 inline void
 audit_gencode_phase(bool start)
 {
+    if (audit_callbacks == NULL)
+        return;
+
     audit_callbacks->audit_gencode_phase(start);
 }
 
 inline void
 audit_instr(instr_t *instr, byte *copy_pc)
 {
+    if (audit_callbacks == NULL)
+        return;
+
     audit_callbacks->audit_instr(instr, copy_pc);
 }
 
@@ -334,6 +425,9 @@ audit_instrument_ibl_indirect_handler(dcontext_t *dcontext, instrlist_t *ilist,
                                       app_pc ibl_routine_start_pc,
                                       instr_t *fragment_not_found_handler)
 {
+    if (audit_callbacks == NULL)
+        return;
+
     audit_callbacks->audit_instrument_ibl_indirect_handler(dcontext, ilist,
                                                            ibl_routine_start_pc,
                                                            fragment_not_found_handler);
@@ -343,6 +437,9 @@ inline void
 audit_instrument_ibl_indirect_hook(dcontext_t *dcontext, instrlist_t *ilist,
                                    app_pc ibl_routine_start_pc)
 {
+    if (audit_callbacks == NULL)
+        return;
+
     audit_callbacks->audit_instrument_ibl_indirect_hook(dcontext, ilist,
                                                         ibl_routine_start_pc);
 }
@@ -351,20 +448,39 @@ inline void
 audit_instrument_ibl_fcache_return(dcontext_t *dcontext, instrlist_t *ilist,
                                    app_pc ibl_routine_start_pc)
 {
+    if (audit_callbacks == NULL)
+        return;
+
     audit_callbacks->audit_instrument_ibl_fcache_return(dcontext, ilist,
                                                         ibl_routine_start_pc);
+}
+
+inline app_pc
+audit_adjust_for_ibl_instrumentation(dcontext_t *dcontext, app_pc pc, app_pc raw_start_pc)
+{
+    if (audit_callbacks == NULL)
+        return pc;
+
+    return audit_callbacks->audit_adjust_for_ibl_instrumentation(dcontext, pc,
+                                                                 raw_start_pc);
 }
 
 inline void
 audit_code_modification(dcontext_t *dcontext, fragment_t *f, app_pc next_pc,
                         app_pc target, size_t write_size)
 {
+    if (audit_callbacks == NULL)
+        return;
+
     audit_callbacks->audit_code_modification(dcontext, f, next_pc, target, write_size);
 }
 
 inline void
 audit_gencode_ibl_routine(app_pc pc, bool syscall)
 {
+    if (audit_callbacks == NULL)
+        return;
+
     audit_callbacks->audit_gencode_ibl_routine(pc, syscall);
 }
 
@@ -373,12 +489,18 @@ audit_gencode_ibl_routine(app_pc pc, bool syscall)
 inline void
 audit_heartbeat(dcontext_t *dcontext)
 {
+    if (audit_callbacks == NULL)
+        return;
+
     audit_callbacks->audit_heartbeat(dcontext);
 }
 
 inline void
 audit_intercept(app_pc start, app_pc end)
 {
+    if (audit_callbacks == NULL)
+        return;
+
     audit_callbacks->audit_intercept(start, end);
 }
 
@@ -389,18 +511,27 @@ audit_intercept(app_pc start, app_pc end)
 inline void
 audit_callback_context_switch(dcontext_t *dcontext, bool is_return)
 {
+    if (audit_callbacks == NULL)
+        return;
+
     audit_callbacks->audit_callback_context_switch(dcontext, is_return);
 }
 
 inline void
 audit_nested_shadow_stack(dcontext_t *dcontext, bool push)
 {
+    if (audit_callbacks == NULL)
+        return;
+
     audit_callbacks->audit_nested_shadow_stack(dcontext, push);
 }
 
 inline void
 audit_nt_continue()
 {
+    if (audit_callbacks == NULL)
+        return;
+
     audit_callbacks->audit_nt_continue();
 }
 
@@ -409,6 +540,9 @@ audit_nt_continue()
 inline void
 audit_socket_handle(dcontext_t *dcontext, HANDLE handle, bool created)
 {
+    if (audit_callbacks == NULL)
+        return;
+
     audit_callbacks->audit_socket_handle(dcontext, handle, created);
 }
 
@@ -418,6 +552,9 @@ audit_device_io_control(dcontext_t *dcontext, uint result, HANDLE socket, HANDLE
                         byte *input_data, uint input_length,
                         byte *output_data, uint output_length)
 {
+    if (audit_callbacks == NULL)
+        return;
+
     audit_callbacks->audit_device_io_control(dcontext, result, socket, event,
                                              status_block, control_code, input_data,
                                              input_length, output_data, output_length);
@@ -426,6 +563,9 @@ audit_device_io_control(dcontext_t *dcontext, uint result, HANDLE socket, HANDLE
 inline void
 audit_wait_for_single_object(dcontext_t *dcontext, HANDLE event)
 {
+    if (audit_callbacks == NULL)
+        return;
+
     audit_callbacks->audit_wait_for_single_object(dcontext, event);
 }
 
@@ -433,6 +573,9 @@ inline void
 audit_wait_for_multiple_objects(dcontext_t *dcontext, uint result, uint handle_count,
                                 HANDLE *handles, bool wait_all)
 {
+    if (audit_callbacks == NULL)
+        return;
+
     audit_callbacks->audit_wait_for_multiple_objects(dcontext, result, handle_count,
                                                      handles, wait_all);
 }

@@ -5224,7 +5224,7 @@ insert_increment_stat_counter(dcontext_t *dcontext, instrlist_t *trace, instr_t 
  */
 static inline int
 insert_restore_spilled_xcx(dcontext_t *dcontext, instrlist_t *trace, instr_t *next
-                           _IF_SEC(bool ibp_is_return) _IF_SEC(app_pc tag))
+                           _IF_SEC(bool ibp_is_return) _IF_SEC(app_pc ibp_from_tag))
 {
     int added_size = 0;
 
@@ -5244,7 +5244,7 @@ insert_restore_spilled_xcx(dcontext_t *dcontext, instrlist_t *trace, instr_t *ne
 
 #ifdef SECURITY_AUDIT
             if (ibp_is_return) {
-                added_size += audit_return(dcontext, trace, restore, tag);
+                added_size += audit_return(dcontext, trace, restore, ibp_from_tag);
 
                 SEC_LOG(4, "<ret> fixup_last_cti instrumenting inline return in "PX"\n",
                         ibp_from_tag);
@@ -5256,7 +5256,8 @@ insert_restore_spilled_xcx(dcontext_t *dcontext, instrlist_t *trace, instr_t *ne
          * mcontext for private fragments, and all traces are private
          */
         added_size += tracelist_add(dcontext, trace, next,
-                                    instr_create_restore_from_dcontext(dcontext, REG_XCX, XCX_OFFSET));
+                                    instr_create_restore_from_dcontext(dcontext, REG_XCX,
+                                                                       XCX_OFFSET));
     }
 
     return added_size;
@@ -5310,7 +5311,7 @@ insert_transparent_comparison(dcontext_t *dcontext, instrlist_t *trace,
     added_size += tracelist_add_after(dcontext, trace, targeter, continue_label);
 #ifdef SECURITY_AUDIT
     if (ibp_from_tag != NULL) {
-        added_size += audit_indirect_branchpoint(dcontext, trace, ibp_from_tag, targeter
+        added_size += audit_indirect_branchpoint(dcontext, trace, ibp_from_tag, targeter,
                                                  ibp_is_return, -1/*no sysnum*/);
     }
 #endif
@@ -7041,16 +7042,7 @@ decode_fragment(dcontext_t *dcontext, fragment_t *f, byte *buf, /*IN/OUT*/uint *
             ASSERT(pc == stop_pc);
 
 #ifdef SECURITY_AUDIT
-            /* check for IBL setup and if present, raise `pc` above it */
-            if ((pc - IBL_SETUP_BYTE_COUNT) >= raw_start_pc) {
-                app_pc ibl_setup_next_pc;
-                app_pc ibl_setup_pc = (pc - IBL_SETUP_BYTE_COUNT);
-
-                instr_reset(dcontext, instr);
-                ibl_setup_next_pc = decode(dcontext, ibl_setup_pc, instr);
-                if (ibl_setup_next_pc != NULL && is_ibl_setup_instr(instr))
-                    pc = ibl_setup_pc;
-            }
+            pc = audit_adjust_for_ibl_instrumentation(dcontext, pc, raw_start_pc);
 #endif
 
             /* create single raw instr for rest of instructions up to exit cti */

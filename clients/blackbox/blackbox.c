@@ -44,7 +44,7 @@ audit_fcache_enter(dcontext_t *dcontext)
 }
 
 static void
-audit_fragment_link(dcontext_t *dcontext, bool direct, byte exit_ordinal)
+audit_fragment_link(dcontext_t *dcontext, bool direct)
 {
     if (direct) {
         /* assuming trace head has already been linked as a bb */
@@ -73,7 +73,7 @@ audit_fragment_link_tags(dcontext_t *dcontext, app_pc from_tag, app_pc to_tag,
 }
 
 static void
-audit_syscall(ptr_uint_t sysnum)
+audit_syscall(dcontext_t *dcontext, app_pc tag, int syscall_number) {
 {
 #ifdef MONITOR_UNEXPECTED_IBP
     if (is_stack_spy_sysnum(sysnum)) {
@@ -88,6 +88,14 @@ audit_syscall(ptr_uint_t sysnum)
             write_meta_suspicious_syscall(dcontext, sysnum, &cstl->stack_suspicion);
         }
 #endif
+
+    notify_traversing_syscall(dcontext, tag, syscall_number);
+}
+
+inline bool
+audit_filter_syscall(int sysnum)
+{
+    return is_stack_spy_sysnum(sysnum); /*do intercept the stack spy sysnums*/
 }
 
 #ifdef WINDOWS
@@ -184,7 +192,7 @@ audit_thread_exit(dcontext_t *dcontext)
 }
 
 static void
-audit_process_fork(dcontext_t *dcontext, const char *name)
+audit_process_fork(dcontext_t *dcontext, const wchar_t *name)
 {
     notify_process_fork(dcontext, name);
 }
@@ -258,9 +266,16 @@ audit_instrument_ibl_indirect_hook(dcontext_t *dcontext, instrlist_t *ilist,
 }
 
 static void
-audit_instrument_ibl_fcache_return(dcontext_t *dcontext, instrlist_t *ilist, app_pc ibl_routine_start_pc)
+audit_instrument_ibl_fcache_return(dcontext_t *dcontext, instrlist_t *ilist,
+                                   app_pc ibl_routine_start_pc)
 {
     prepare_fcache_return_from_ibl(dcontext, ilist, ibl_routine_start_pc);
+}
+
+static app_pc
+audit_adjust_for_ibl_instrumentation(dcontext_t *dcontext, app_pc pc, app_pc raw_start_pc)
+{
+    adjust_for_ibl_instrumentation(dcontext, pc, raw_start_pc);
 }
 
 static uint
@@ -286,10 +301,13 @@ static void
 audit_memory_executable_change(dcontext_t *dcontext, app_pc base, size_t size,
                                bool becomes_executable, bool safe_to_read)
 {
-    if (becomes_executable)
-        add_shadow_pages(dcontext, base, size, true);
-    else
-        remove_shadow_pages(dcontext, base, size);
+    module_location_t *module = get_module_for_address(base);
+    if (module != NULL && module->type == module_type_anonymous)) {
+        if (becomes_executable)
+            add_shadow_pages(dcontext, base, size, true);
+        else
+            remove_shadow_pages(dcontext, base, size);
+    }
 }
 
 static void
@@ -387,6 +405,7 @@ static audit_callbacks_t callbacks = {
     audit_fragment_link,
     audit_fragment_link_tags,
     audit_syscall,
+    audit_filter_syscall,
     audit_bb_link_complete,
     audit_translation,
     audit_fragment_remove,

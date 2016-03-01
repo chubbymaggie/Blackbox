@@ -5587,7 +5587,8 @@ emit_indirect_branch_lookup(dcontext_t *dcontext, generated_code_t *code, byte *
     APP(&ilist, fragment_not_found);
 
 #ifdef SECURITY_AUDIT
-    audit_instrument_ibl_fcache_return(dcontext, &ilist, ibl_code);
+    audit_instrument_ibl_fcache_return(dcontext, &ilist,
+                                       ibl_code->indirect_branch_lookup_routine);
 #endif
 
     /* This counter will also get the unlink inline indirect branch race
@@ -5932,7 +5933,9 @@ emit_indirect_branch_lookup(dcontext_t *dcontext, generated_code_t *code, byte *
 #endif
 
 #ifdef SECURITY_AUDIT
-    audit_instrument_ibl_indirect_handler(dcontext, &ilist, ibl_code, fragment_not_found);
+    audit_instrument_ibl_indirect_handler(dcontext, &ilist,
+                                          ibl_code->indirect_branch_lookup_routine,
+                                          fragment_not_found);
 #endif
 
     ibl_code->ibl_routine_length = encode_with_patch_list(dcontext, patch, &ilist, pc);

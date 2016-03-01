@@ -2800,7 +2800,7 @@ instr_encode_check_reachability(dcontext_t *dcontext, instr_t *instr, byte *pc,
 byte *
 instr_encode_to_copy(dcontext_t *dcontext, instr_t *instr, byte *copy_pc, byte *final_pc)
 {
-#ifdef SECURITY_AUDIT
+#if defined(SECURITY_AUDIT) && !defined(NOT_DYNAMORIO_CORE_PROPER)
     audit_instr(instr, copy_pc);
 #endif
 

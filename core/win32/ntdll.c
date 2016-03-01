@@ -2172,7 +2172,7 @@ void
 nt_continue(CONTEXT *cxt)
 {
     GET_RAW_SYSCALL(Continue, IN PCONTEXT Context, IN BOOLEAN TestAlert);
-#ifdef SECURITY_AUDIT
+#if defined(SECURITY_AUDIT) && !defined(NOT_DYNAMORIO_CORE_PROPER)
     audit_nt_continue();
 #endif
     NT_SYSCALL(Continue, cxt, 0/* don't change APC status */);

@@ -128,7 +128,7 @@ dispatch(dcontext_t *dcontext)
     fragment_t coarse_f;
 
 #ifdef SECURITY_AUDIT
-    instrument_dispatch(dcontext);
+    audit_dispatch(dcontext);
 #endif
 
 #ifdef HAVE_TLS
@@ -736,11 +736,11 @@ dispatch_enter_dynamorio(dcontext_t *dcontext)
             dcontext->next_tag = EXIT_TARGET_TAG(dcontext, dcontext->last_fragment,
                                                  dcontext->last_exit);
 #ifdef SECURITY_AUDIT
-            audit_fragment_link(dcontext, true, exit_ordinal);
+            audit_fragment_link(dcontext, true);
 #endif
         } else {
 #ifdef SECURITY_AUDIT
-            audit_fragment_link(dcontext, false, 0);
+            audit_fragment_link(dcontext, false);
 #endif
             /* get src info from coarse ibl exit into the right place */
             if (DYNAMO_OPTION(coarse_units)) {
@@ -1662,10 +1662,6 @@ handle_system_call(dcontext_t *dcontext)
         dcontext->sys_was_int = false;
         IF_NOT_X64(IF_VMX86(ASSERT(!is_vmkuw_sysnum(mc->xax))));
     }
-#endif
-
-#ifdef SECURITY_AUDIT
-    audit_syscall(mc->xax);
 #endif
 
 #ifdef CLIENT_INTERFACE

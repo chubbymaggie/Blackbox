@@ -709,7 +709,7 @@ dynamorio_app_init(void)
     }
 
 #ifdef SECURITY_AUDIT
-    audit_dynamo_model_initalized();
+    audit_dynamo_model_initialized();
 #endif
 
     dynamo_initialized = true;

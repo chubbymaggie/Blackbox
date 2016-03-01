@@ -782,6 +782,11 @@ typedef int stats_int_t;
 #define L_PFMT L"%016"L_EXPAND_LEVEL(INT64_FORMAT)L"x"
 #define PFX "0x"PFMT
 #define PIFX "0x"PIFMT
+#ifdef X64
+# define PX "0x%llx"
+#else
+# define PX "0x%lx"
+#endif
 
 /* printf code for {thread,process}_id_t */
 #ifdef WINDOWS

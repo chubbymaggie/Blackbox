@@ -176,7 +176,7 @@ typedef struct _local_state_extended_t {
     spill_state_t spill_space;
     table_stat_state_t table_space;
 #ifdef SECURITY_AUDIT
-    _local_security_audit_state_t security_audit_state;
+    local_security_audit_state_t security_audit_state;
 #endif
 } local_state_extended_t;
 

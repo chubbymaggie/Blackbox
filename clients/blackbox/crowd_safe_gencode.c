@@ -83,11 +83,11 @@ is_tracked_syscall_routine(byte *pc);
 
 static void
 append_indirect_branch_pairing_routine(dcontext_t *dcontext, instrlist_t *ilist,
-                                       ibl_code_t *ibl_code, instr_t *fragment_not_found);
+                                       instr_t *fragment_not_found);
 
 static void
 append_shadow_stack_resolution_routine(dcontext_t *dcontext, instrlist_t *ilist,
-                                       ibl_code_t *ibl_code, instr_t *fragment_not_found);
+                                       instr_t *fragment_not_found);
 
 /**** Public Functions ****/
 
@@ -249,13 +249,14 @@ is_ibl_setup_instr(instr_t *instr)
 }
 
 void
-prepare_fcache_return_from_ibl(dcontext_t *dcontext, instrlist_t *bb, ibl_code_t *ibl_routine_start_pc) {
+prepare_fcache_return_from_ibl(dcontext_t *dcontext, instrlist_t *bb,
+                               app_pc ibl_routine_start_pc) {
     CROWD_SAFE_DEBUG_HOOK_VOID(__FUNCTION__);
 
     if (!CROWD_SAFE_BB_GRAPH())
         return;
 
-    if (is_tracked_ibl_routine(ibl_routine_start_pc->indirect_branch_lookup_routine)) {
+    if (is_tracked_ibl_routine(ibl_routine_start_pc)) {
         APP(bb, SAVE_TO_TLS(dcontext,
             REG_XBX,
             TLS_IBP_TO_TAG));
@@ -393,20 +394,41 @@ append_indirect_link_notification_hook(dcontext_t *dcontext, instrlist_t *ilist,
 }
 
 void
-append_indirect_link_notification(dcontext_t *dcontext, instrlist_t *ilist, ibl_code_t *ibl_code,
-        instr_t *fragment_not_found) {
+append_indirect_link_notification(dcontext_t *dcontext, instrlist_t *ilist,
+                                  app_pc indirect_branch_lookup_routine,
+                                  instr_t *fragment_not_found) {
     CROWD_SAFE_DEBUG_HOOK_VOID(__FUNCTION__);
 
     if (!CROWD_SAFE_BB_GRAPH())
         return;
 
-    if (!is_tracked_ibl_routine(ibl_code->indirect_branch_lookup_routine)) {
-        CS_WARN("Skipping instrumentation of untracked ibl routine at %x\n", ibl_code->indirect_branch_lookup_routine);
+    if (!is_tracked_ibl_routine(indirect_branch_lookup_routine)) {
+        CS_WARN("Skipping instrumentation of untracked ibl routine at %x\n",
+                indirect_branch_lookup_routine);
         return;
     }
 
-    append_indirect_branch_pairing_routine(dcontext, ilist, ibl_code, fragment_not_found);
-    append_shadow_stack_resolution_routine(dcontext, ilist, ibl_code, fragment_not_found);
+    append_indirect_branch_pairing_routine(dcontext, ilist, fragment_not_found);
+    append_shadow_stack_resolution_routine(dcontext, ilist, fragment_not_found);
+}
+
+app_pc
+adjust_for_ibl_instrumentation(dcontext_t *dcontext, app_pc pc, app_pc raw_start_pc)
+{
+    /* check for IBL setup and if present, raise `pc` above it */
+    if ((pc - IBL_SETUP_BYTE_COUNT) >= raw_start_pc) {
+        instr_t instr;
+        app_pc ibl_setup_next_pc;
+        app_pc ibl_setup_pc = (pc - IBL_SETUP_BYTE_COUNT);
+
+        instr_init(&instr);
+        ibl_setup_next_pc = decode(dcontext, ibl_setup_pc, instr);
+        if (ibl_setup_next_pc != NULL && is_ibl_setup_instr(instr))
+            pc = ibl_setup_pc;
+        instr_destroy(&instr);
+    }
+
+    return pc;
 }
 
 void
@@ -528,7 +550,7 @@ is_tracked_syscall_routine(byte *pc) {
 }
 
 static inline void
-append_indirect_branch_pairing_routine(dcontext_t *dcontext, instrlist_t *ilist, ibl_code_t *ibl_code, instr_t *fragment_not_found) {
+append_indirect_branch_pairing_routine(dcontext_t *dcontext, instrlist_t *ilist, instr_t *fragment_not_found) {
     instr_t *is_bucket_match, *is_bucket_empty, *is_bucket_end_sentinel, *loop_to_table_start, *step_to_next_bucket;
 
     /********** branch targets ***********/
@@ -721,7 +743,7 @@ append_indirect_branch_pairing_routine(dcontext_t *dcontext, instrlist_t *ilist,
 
 static inline void
 append_shadow_stack_resolution_routine(dcontext_t *dcontext, instrlist_t *ilist,
-                                       ibl_code_t *ibl_code, instr_t *fragment_not_found) {
+                                       instr_t *fragment_not_found) {
     instr_t *unexpected_return_handler;
     instr_t *unwind_shadow_stack_loop;
     instr_t *unset_stack_pending;

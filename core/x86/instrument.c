@@ -64,10 +64,6 @@
 # include "../unix/module.h" /* redirect_* functions */
 #endif
 
-#ifdef SECURITY_AUDIT
-#include "../../ext/link-observer/link_observer.h"
-#endif
-
 #ifdef CLIENT_INTERFACE
 /* in utils.c, not exported to everyone */
 extern void do_file_write(file_t f, const char *fmt, va_list ap);
@@ -1487,7 +1483,7 @@ instrument_trace(dcontext_t *dcontext, app_pc tag, instrlist_t *trace,
 #endif
 
 #ifdef SECURITY_AUDIT
-    notify_trace_constructed(dcontext, trace);
+    audit_translation(dcontext, NULL/*no start pc*/, trace, -1/*no syscall*/);
 #endif
 
     if (trace_callbacks.num == 0)
@@ -1849,7 +1845,7 @@ bool
 instrument_filter_syscall(dcontext_t *dcontext, int sysnum)
 {
 #ifdef SECURITY_AUDIT
-    return is_stack_spy_sysnum(sysnum);
+    return audit_filter_syscall(sysnum);
 #else
     bool ret = false;
     /* if client does not filter then we don't intercept anything */
@@ -1868,7 +1864,7 @@ instrument_pre_syscall(dcontext_t *dcontext, int sysnum)
 {
     bool exec = true;
 #ifdef SECURITY_AUDIT
-    notify_traversing_syscall(dcontext, dcontext->last_fragment->tag, sysnum);
+    audit_syscall(dcontext, dcontext->last_fragment->tag, sysnum);
 #endif
 
 #ifndef SECURITY_AUDIT

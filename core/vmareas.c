@@ -60,6 +60,7 @@
 
 #ifdef CLIENT_INTERFACE
 # include "instrument.h"
+# include "audit.h"
 #endif
 
 #ifdef DEBUG
@@ -7051,23 +7052,23 @@ app_memory_protection_change(dcontext_t *dcontext, app_pc base, size_t size,
 
 #ifdef SECURITY_AUDIT
     {
-        module_location_t *containing_module = get_module_for_address(base);
-        if ((base > PC(0)) && (containing_module->type == module_type_anonymous)) {
+        if (base != NULL) {
             bool has_been_executable = TEST(MEMPROT_EXEC, *old_memprot);
             bool will_be_executable = TEST(MEMPROT_EXEC, prot);
 
-            SEC_LOG(4, "DMP| Permission change on: "PX" +0x%x; contained by %s\n",
-                base, size, containing_module->module_name);
+            SEC_LOG(4, "DMP| Permission change on: "PX" +0x%x\n", base, size);
 
             if (will_be_executable && !has_been_executable) {
-                SEC_LOG(4, "DMP| Memory becomes executable: "PX" +0x%x; contained by %s, stack modules:\n",
-                    base, size, containing_module->module_name);
+                SEC_LOG(4, "DMP| Memory becomes executable: "PX" +0x%x\n", base, size);
 
-                audit_memory_executable_change(dcontext, base, size, true/*+x*/, true/*safe to read*/);
+                audit_memory_executable_change(dcontext, base, size,
+                                               true/*+x*/, true/*safe to read*/);
             } else if (has_been_executable && !will_be_executable) {
-                SEC_LOG(4, "DMP| Memory becomes non-executable: "PX" +0x%x\n", base, size);
+                SEC_LOG(4, "DMP| Memory becomes non-executable: "PX" +0x%x\n",
+                        base, size);
 
-                audit_memory_executable_change(dcontext, base, size, false/*-x*/, false/*safe to read*/);
+                audit_memory_executable_change(dcontext, base, size,
+                                               false/*-x*/, false/*safe to read*/);
             }
         }
     }

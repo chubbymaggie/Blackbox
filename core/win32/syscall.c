@@ -1475,7 +1475,8 @@ presys_TerminateProcess(dcontext_t *dcontext, reg_t *param_base)
         copy_mcontext(&mcontext, mc);
 
 #ifdef SECURITY_AUDIT
-        audit_process_terminating(false);
+        audit_process_terminating(false/*ignored*/, false/*not crash*/,
+                                  __FILE__, __LINE__, "NtTerminateProcess");
 #endif
 
         /* we hold the initexit lock at this point, but we cannot release
@@ -3114,7 +3115,7 @@ postsys_AllocateVirtualMemory(dcontext_t *dcontext, reg_t *param_base, bool succ
     }
 
 #ifdef SECURITY_AUDIT
-    if ((base > PC(0)) && prot_is_executable(prot)) {
+    if (base != NULL && prot_is_executable(prot)) {
         SEC_LOG(4, "DMP| Executable memory allocation: "PX" +0x%x\n", base, size);
 
         audit_memory_executable_change(dcontext, base, size, true/*+x*/,

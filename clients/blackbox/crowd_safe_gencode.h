@@ -39,7 +39,8 @@ is_ibl_setup_instr(instr_t *instr);
  * hashcode for them after returning to DR, finally restoring the target app's
  * contents of %temp1. */
 void
-prepare_fcache_return_from_ibl(dcontext_t *dcontext, instrlist_t *bb, ibl_code_t *ibl_code);
+prepare_fcache_return_from_ibl(dcontext_t *dcontext, instrlist_t *bb,
+                               app_pc ibl_routine_start_pc);
 
 /* Called from generation of the IBL stub at the point the stub finds the indirect
  * branch target. Inserts one instruction into the gencode:

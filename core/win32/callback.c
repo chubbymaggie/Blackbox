@@ -4012,8 +4012,9 @@ found_modified_code(dcontext_t *dcontext, EXCEPTION_RECORD *pExcptRec,
             next_pc = handle_modified_code(dcontext, instr_cache_pc, translated_pc, target, f);
 #ifdef SECURITY_AUDIT
             if (next_pc != NULL) {
-                SEC_LOG(4, "Code modification trap: code at "PX" written by "PX". Resuming at "PX" on thread 0x%x\n",
-                    target, f->tag, next_pc, current_thread_id());
+                SEC_LOG(4, "Code modification trap: code at "PX" written by "PX"."
+                        "Resuming at "PX" on thread 0x%x\n",
+                        target, f->tag, next_pc, dr_get_thread_id(dcontext));
 
                 audit_code_modification(dcontext, f, next_pc, target, write_size);
             }
@@ -5236,7 +5237,7 @@ intercept_exception(app_state_at_intercept_t *state)
         }
 
         SEC_LOG(4, "Handling app exception at "PX" on thread 0x%x\n",
-               pExcptRec->ExceptionAddress, current_thread_id());
+               pExcptRec->ExceptionAddress, dr_get_thread_id(dcontext));
 
         check_internal_exception(dcontext, cxt, pExcptRec, forged_exception_addr
                                  _IF_CLIENT(&raw_mcontext));

@@ -210,9 +210,6 @@ typedef uint clock_type_t;
 # define PX "0x%lx"
 #endif
 
-#define IS_SPECIAL_LINKSTUB(l) \
-    TESTANY(LINK_SPECIAL_EXIT IF_WINDOWS(| LINK_CALLBACK_RETURN | LINK_CALLBACK_RETURN) | LINK_NI_SYSCALL, l->flags)
-
 #define UINT_FIELD(p, offset) (*(((uint *) p) + offset))
 #define USHORT_FIELD(p, offset) (*(((ushort *) p) + offset))
 
@@ -819,7 +816,7 @@ find_indirect_ordinal(fragment_t *f) {
     byte exit_ordinal = 0;
 
     for (l = FRAGMENT_EXIT_STUBS(f); l; l = LINKSTUB_NEXT_EXIT(l)) {
-        if (IS_SPECIAL_LINKSTUB(l))
+        if (LINKSTUB_SPECIAL(l->flags))
             continue;
         if (LINKSTUB_INDIRECT(l->flags)) {
             return exit_ordinal;
@@ -836,7 +833,7 @@ find_call_ordinal(fragment_t *f) {
     byte exit_ordinal = 0;
 
     for (l = FRAGMENT_EXIT_STUBS(f); l; l = LINKSTUB_NEXT_EXIT(l)) {
-        if (IS_SPECIAL_LINKSTUB(l))
+        if (LINKSTUB_SPECIAL(l->flags))
             continue;
         if (TEST(LINK_CALL, l->flags)) {
             return exit_ordinal;
@@ -853,7 +850,7 @@ count_ordinals(fragment_t *f) {
     byte exit_ordinal = 0;
 
     for (l = FRAGMENT_EXIT_STUBS(f); l; l = LINKSTUB_NEXT_EXIT(l)) {
-        if (!IS_SPECIAL_LINKSTUB(l))
+        if (!LINKSTUB_SPECIAL(l->flags))
             exit_ordinal++;
         if (TEST(LINK_CALL, l->flags))
             exit_ordinal++; // one more for the call continuation
@@ -943,7 +940,7 @@ find_direct_link_exit_ordinal(fragment_t *from, app_pc to) {
     byte exit_ordinal = 0x0;
 
     for (l = FRAGMENT_EXIT_STUBS(from); l; l = LINKSTUB_NEXT_EXIT(l)) {
-        if (IS_SPECIAL_LINKSTUB(l))
+        if (LINKSTUB_SPECIAL(l->flags))
             continue;
         if (LINKSTUB_DIRECT(l->flags) && (((direct_linkstub_t*)l)->target_tag == to)) {
             return exit_ordinal;

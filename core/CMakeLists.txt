@@ -75,6 +75,7 @@ set(CORE_SRCS
   loader_shared.c
   io.c
   native_exec.c
+  x86/audit.c
   )
 
 if (UNIX)
@@ -117,7 +118,6 @@ set(ARCH_SRCS
   x86/sideline.c
   x86/instrument.c
   x86/retcheck.c
-  x86/audit.c
   )
 
 if (X64)

@@ -1783,7 +1783,7 @@ link_fragment_incoming(dcontext_t *dcontext, fragment_t *f, bool new_fragment)
         /* only direct branches are marked on targets' incoming */
         ASSERT(LINKSTUB_DIRECT(l->flags));
 #ifdef SECURITY_AUDIT
-        if (!(IS_SPECIAL_LINKSTUB(l) || TEST(FRAG_TEMP_PRIVATE, f->flags) ||
+        if (!(LINKSTUB_SPECIAL(l->flags) || TEST(FRAG_TEMP_PRIVATE, f->flags) ||
               TEST(FRAG_IS_TRACE, in_f->flags))) {
             audit_fragment_link_tags(dcontext, in_f->tag, f->tag, 0xff/*what ordinal??*/);
         }
@@ -1874,8 +1874,8 @@ link_fragment_outgoing(dcontext_t *dcontext, fragment_t *f, bool new_fragment)
                     target_tag);
             }
 #ifdef SECURITY_AUDIT
-            if (!(IS_SPECIAL_LINKSTUB(l) || TEST(FRAG_IS_TRACE, f->flags)))
-                audit_fragment_link_tags(dcontext, f, target_tag, exit_ordinal++);
+            if (!(LINKSTUB_SPECIAL(l->flags) || TEST(FRAG_IS_TRACE, f->flags)))
+                audit_fragment_link_tags(dcontext, f->tag, target_tag, exit_ordinal++);
 #endif
         } else {
             ASSERT(LINKSTUB_INDIRECT(l->flags));

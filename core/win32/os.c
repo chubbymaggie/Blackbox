@@ -52,6 +52,11 @@
 #endif
 #include "../dispatch.h"
 #include "instrument.h" /* is_in_client_lib() */
+#include "audit.h"
+#ifdef SECURITY_AUDIT
+# include "inject_shared.h" /* get_process_imgname_cmdline() */
+
+#endif
 
 #include <windows.h>
 #include <stddef.h> /* for offsetof */
@@ -61,9 +66,6 @@
 #include "../synch.h"
 #include "../perscache.h"
 #include "../native_exec.h"
-
-#include "instrument.h"
-#include "audit.h"
 
 #ifdef NOT_DYNAMORIO_CORE_PROPER
 # undef ASSERT
@@ -3000,11 +3002,11 @@ maybe_inject_into_process(dcontext_t *dcontext, HANDLE process_handle,
 #ifdef SECURITY_AUDIT
             {
                 wchar_t name[260], *name_ptr, *name_walk;
-
+                /*
                 get_process_imgname_cmdline(process_handle, name,
                                             BUFFER_SIZE_ELEMENTS(name),
                                             NULL, 0);
-
+                */
                 for (name_ptr = name_walk = name; name_walk[0] != '\0'; name_walk++) {
                     if (name_walk[0] == '\\')
                         name_ptr = name_walk + 1;
@@ -3997,7 +3999,7 @@ process_mmap(dcontext_t *dcontext, app_pc pc, size_t size, bool add, const char 
     }
 
 #ifdef SECURITY_AUDIT
-    if ((mbi.BaseAddress > PC(0)) && prot_is_executable(mbi.Protect) && !image) {
+    if ((mbi.BaseAddress != NULL) && prot_is_executable(mbi.Protect) && !image) {
         if (add) {
             SEC_LOG(4, "DMP| Adding executable memory region: "PX" +0x%x\n",
                    mbi.BaseAddress, mbi.RegionSize);
