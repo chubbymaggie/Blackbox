@@ -85,8 +85,8 @@ static int fixup_last_cti(dcontext_t *dcontext, instrlist_t *trace,
                           fragment_t *prev_f, linkstub_t *prev_l,
                           bool record_translation, uint *num_exits_deleted/*OUT*/,
                           /* If non-NULL, only looks inside trace between these two */
-                          instr_t *start_instr, instr_t *end_instr, app_pc ibp_from_tag,
-                          bool ibp_is_return);
+                          instr_t *start_instr, instr_t *end_instr
+                          _IF_SEC(app_pc ibp_from_tag) _IF_SEC(bool ibp_is_return));
 bool mangle_trace(dcontext_t *dcontext, instrlist_t *ilist, monitor_data_t *md);
 
 /* we use a branch limit of 1 to make it easier for the trace
@@ -4879,7 +4879,9 @@ recreate_fragment_ilist(dcontext_t *dcontext, byte *pc,
         uint i;
         instr_t *last;
         bool mangle_at_end = mangle_trace_at_end();
+#ifdef SECURITY_AUDIT
         instr_t bb_exit_cti;
+#endif
 
         if (mangle_at_end) {
             /* we need an md for mangle_trace */
@@ -4896,7 +4898,9 @@ recreate_fragment_ilist(dcontext_t *dcontext, byte *pc,
         }
 
         ilist = instrlist_create(dcontext);
+#ifdef SECURITY_AUDIT
         instr_init(dcontext, &bb_exit_cti);
+#endif
         STATS_INC(num_recreated_traces);
         ASSERT(t->bbs != NULL);
         for (i=0; i<t->num_bbs; i++) {
@@ -4961,11 +4965,14 @@ recreate_fragment_ilist(dcontext_t *dcontext, byte *pc,
                     remove_nops_from_ilist(dcontext, bb _IF_DEBUG(true));
                 }
                 if (instrlist_last(ilist) != NULL) {
-                    decode_cti(dcontext, instr_get_app_pc(md.blk_info[i].end_instr), &bb_exit_cti);
+#ifdef SECURITY_AUDIT
+                    decode_cti(dcontext, instr_get_app_pc(md.blk_info[i].end_instr),
+                               &bb_exit_cti);
+#endif
                     fixup_last_cti(dcontext, ilist, (app_pc) apc, flags, f->flags, NULL,
                                    NULL, true/* record translation */, NULL,
-                                   NULL, NULL, md.blk_info[i].info.tag,
-                                   instr_is_return(&bb_exit_cti));
+                                   NULL, NULL _IF_SEC(md.blk_info[i].info.tag)
+                                   _IF_SEC(instr_is_return(&bb_exit_cti)));
                 }
             }
 
@@ -4973,7 +4980,9 @@ recreate_fragment_ilist(dcontext_t *dcontext, byte *pc,
             instrlist_init(bb); /* to clear fields to make destroy happy */
             instrlist_destroy(dcontext, bb);
         }
+#ifdef SECURITY_AUDIT
         instr_free(dcontext, &bb_exit_cti);
+#endif
 
 #ifdef CLIENT_INTERFACE
         /* PR 214962: re-apply client changes, this time storing translation
@@ -5214,7 +5223,8 @@ insert_increment_stat_counter(dcontext_t *dcontext, instrlist_t *trace, instr_t 
  * returns size to be added to trace
  */
 static inline int
-insert_restore_spilled_xcx(dcontext_t *dcontext, instrlist_t *trace, instr_t *next, bool ibp_is_return, app_pc tag)
+insert_restore_spilled_xcx(dcontext_t *dcontext, instrlist_t *trace, instr_t *next
+                           _IF_SEC(bool ibp_is_return) _IF_SEC(app_pc tag))
 {
     int added_size = 0;
 
@@ -5236,7 +5246,8 @@ insert_restore_spilled_xcx(dcontext_t *dcontext, instrlist_t *trace, instr_t *ne
             if (ibp_is_return) {
                 added_size += audit_return(dcontext, trace, restore, tag);
 
-                SEC_LOG(4, "<ret> fixup_last_cti instrumenting inline return in "PX"\n", ibp_from_tag);
+                SEC_LOG(4, "<ret> fixup_last_cti instrumenting inline return in "PX"\n",
+                        ibp_from_tag);
             }
 #endif
         }
@@ -5259,7 +5270,8 @@ insert_restore_spilled_xcx(dcontext_t *dcontext, instrlist_t *trace, instr_t *ne
 static int
 insert_transparent_comparison(dcontext_t *dcontext, instrlist_t *trace,
                               instr_t *targeter, /* exit CTI */
-                              app_pc speculative_tag, app_pc ibp_from_tag, bool ibp_is_return)
+                              app_pc speculative_tag _IF_SEC(app_pc ibp_from_tag)
+                              _IF_SEC(bool ibp_is_return))
 {
     int added_size = 0;
     instr_t *jecxz;
@@ -5298,7 +5310,7 @@ insert_transparent_comparison(dcontext_t *dcontext, instrlist_t *trace,
     added_size += tracelist_add_after(dcontext, trace, targeter, continue_label);
 #ifdef SECURITY_AUDIT
     if (ibp_from_tag != NULL) {
-        added_size += audit_indirect_branchpoint(dcontext, trace, ibp_from_tag, targeter,
+        added_size += audit_indirect_branchpoint(dcontext, trace, ibp_from_tag, targeter
                                                  ibp_is_return, -1/*no sysnum*/);
     }
 #endif
@@ -5391,8 +5403,8 @@ mangle_x64_ib_in_trace(dcontext_t *dcontext, instrlist_t *trace,
 static int
 mangle_indirect_branch_in_trace(dcontext_t *dcontext, instrlist_t *trace,
                                 instr_t *targeter, app_pc next_tag, uint next_flags,
-                                instr_t **delete_after/*OUT*/, instr_t *end_instr,
-                                app_pc ibp_from_tag, bool ibp_is_return)
+                                instr_t **delete_after/*OUT*/, instr_t *end_instr
+                                _IF_SEC(app_pc ibp_from_tag) _IF_SEC(bool ibp_is_return))
 {
     int added_size = 0;
     instr_t *next = instr_get_next(targeter);
@@ -5508,8 +5520,9 @@ mangle_indirect_branch_in_trace(dcontext_t *dcontext, instrlist_t *trace,
         if (!INTERNAL_OPTION(unsafe_ignore_eflags_trace)) {
             /* if equal follow to the next instruction after the exit CTI */
             added_size +=
-                insert_transparent_comparison(dcontext, trace, targeter,
-                                              next_tag, ibp_from_tag, ibp_is_return);
+                insert_transparent_comparison(dcontext, trace, targeter, next_tag
+                                              _IF_SEC(ibp_from_tag)
+                                              _IF_SEC(ibp_is_return));
             /* leave jmp as it is, a jmp to exit stub (thence to ind br
              * lookup) */
         }
@@ -5556,7 +5569,8 @@ mangle_indirect_branch_in_trace(dcontext_t *dcontext, instrlist_t *trace,
 
     /* If we do stay on the trace, must restore xcx
      * TODO optimization: check if xcx is live or not in next bb */
-    added_size += insert_restore_spilled_xcx(dcontext, trace, next, ibp_is_return, ibp_from_tag);
+    added_size += insert_restore_spilled_xcx(dcontext, trace, next _IF_SEC(ibp_is_return)
+                                             _IF_SEC(ibp_from_tag));
 
 #ifdef X64
     if (X64_CACHE_MODE_DC(dcontext)) {
@@ -5617,8 +5631,8 @@ fixup_last_cti(dcontext_t *dcontext, instrlist_t *trace,
                fragment_t *prev_f, linkstub_t *prev_l,
                bool record_translation, uint *num_exits_deleted/*OUT*/,
                /* If non-NULL, only looks inside trace between these two */
-               instr_t *start_instr, instr_t *end_instr, app_pc ibp_from_tag,
-               bool ibp_is_return)
+               instr_t *start_instr, instr_t *end_instr
+               _IF_SEC(app_pc ibp_from_tag) _IF_SEC(bool ibp_is_return))
 {
     app_pc target_tag;
     instr_t *inst, *targeter = NULL;
@@ -5730,8 +5744,9 @@ fixup_last_cti(dcontext_t *dcontext, instrlist_t *trace,
     if (is_indirect) {
         added_size += mangle_indirect_branch_in_trace(dcontext, trace, targeter,
                                                       next_tag, next_flags,
-                                                      &delete_after, end_instr,
-                                                      ibp_from_tag, ibp_is_return);
+                                                      &delete_after, end_instr
+                                                      _IF_SEC(ibp_from_tag)
+                                                      _IF_SEC(ibp_is_return));
     } else {
         /* direct jump or conditional branch */
         instr_t *next = targeter->next;
@@ -5916,7 +5931,8 @@ append_trace_speculate_last_ibl(dcontext_t *dcontext, instrlist_t *trace,
 
     /* leave jmp as it is, a jmp to exit stub (thence to ind br lookup) */
     added_size +=
-        insert_transparent_comparison(dcontext, trace, where, speculate_next_tag, 0, false);
+        insert_transparent_comparison(dcontext, trace, where, speculate_next_tag
+                                      _IF_SEC(0) _IF_SEC(false));
 
 #ifdef HASHTABLE_STATISTICS
     DOSTATS({
@@ -5972,7 +5988,8 @@ append_trace_speculate_last_ibl(dcontext_t *dcontext, instrlist_t *trace,
      */
 
     /* must restore xcx to app value, FIXME: see above for doing this in prefix+stub */
-    added_size += insert_restore_spilled_xcx(dcontext, trace, next, false, NULL);
+    added_size += insert_restore_spilled_xcx(dcontext, trace, next
+                                             _IF_SEC(false) _IF_SEC(NULL));
 
     /* add a new direct exit stub */
     added_size += tracelist_add(dcontext, trace, next,
@@ -6051,7 +6068,8 @@ append_ib_trace_last_ibl_exit_stat(dcontext_t *dcontext, instrlist_t *trace,
          *   using a short jump to see if anyone erroneously uses this
          */
         added_size +=
-            insert_transparent_comparison(dcontext, trace, where, speculate_next_tag, 0, false);
+            insert_transparent_comparison(dcontext, trace, where, speculate_next_tag
+                                          _IF_SEC(0) _IF_SEC(false));
 
         /* we'll kill again although ECX restored unnecessarily by comparison routine,   */
         added_size +=
@@ -6120,9 +6138,9 @@ extend_trace(dcontext_t *dcontext, fragment_t *f, linkstub_t *prev_l, bool ibp_i
     if (instrlist_last(trace) != NULL) {
         prev_mangle_size = fixup_last_cti(dcontext, trace, f->tag, f->flags,
                                           md->trace_flags, prev_f, prev_l, false,
-                                          &num_exits_deleted, NULL, NULL,
-                                          md->blk_info[md->num_blks-1].info.tag,
-                                          ibp_is_return);
+                                          &num_exits_deleted, NULL, NULL
+                                          _IF_SEC(md->blk_info[md->num_blks-1].info.tag)
+                                          _IF_SEC(ibp_is_return));
     }
 
 #ifdef CUSTOM_TRACES_RET_REMOVAL
@@ -6465,8 +6483,8 @@ mangle_trace(dcontext_t *dcontext, instrlist_t *ilist, monitor_data_t *md)
                                TEST(FRAG_HAS_TRANSLATION_INFO, md->trace_flags),
                                &num_exits_deleted,
                                /* Only walk ilist between these instrs */
-                               start_instr, inst, md->blk_info[blk].info.tag,
-                               instr_is_return(&exit_cti));
+                               start_instr, inst _IF_SEC(md->blk_info[blk].info.tag)
+                               _IF_SEC(instr_is_return(&exit_cti)));
 #if defined(RETURN_AFTER_CALL) || defined(RCT_IND_BRANCH)
                 md->blk_info[blk].info.num_exits -= num_exits_deleted;
 #endif

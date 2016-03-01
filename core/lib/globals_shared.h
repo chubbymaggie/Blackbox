@@ -533,6 +533,12 @@ typedef struct _instr_t instr_t;
 # define IF_RETURN_AFTER_CALL_ELSE(x, y) y
 #endif
 
+#if defined(SECURITY_AUDIT)
+# define _IF_SEC(x) , x
+#else
+# define _IF_SEC(x)
+#endif
+
 #ifdef HOT_PATCHING_INTERFACE
 # define IF_HOTP(x) x
 #else
