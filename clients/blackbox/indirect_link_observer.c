@@ -82,9 +82,6 @@ indirect_link_hashtable_insert(dcontext_t *dcontext) {
     bool add;
     CROWD_SAFE_DEBUG_HOOK_VOID(__FUNCTION__);
 
-    if (!CROWD_SAFE_BB_GRAPH())
-        return;
-
     ASSERT(!IBP_STACK_IS_PENDING(ibp_data));
     if (!IBP_PATH_IS_PENDING(ibp_data)) {
         CS_DET("Skip IBP ("PX" - "PX"?) because the path is not pending\n", ibp_data->ibp_from_tag, ibp_data->ibp_to_tag);
@@ -136,17 +133,6 @@ indirect_link_hashtable_insert(dcontext_t *dcontext) {
     if (notify_possibly_unexpected_ibp(dcontext, cstl, ibp_data->ibp_from_tag,
         ibp_data->ibp_to_tag, IBP_IS_UNEXPECTED_RETURN(ibp_data)))
     {
-        /*
-        fragment_t *from_f = fragment_lookup(dcontext, ibp_data->ibp_from_tag);
-        fragment_t *to_f = fragment_lookup(dcontext, ibp_data->ibp_to_tag);
-
-        if (to_f == NULL) {
-            CS_ERR("Repeat IBP to tag with no fragment!\n");
-        } else if (!TEST(to_f->flags, FRAG_IS_TRACE_HEAD)) {
-            CS_LOG("Redundant IBP to non-trace-head "PX"\n", to_f->tag);
-        }
-        */
-
         clear_pending_ibp(ibp_data); // already seen this one, so continue without further action
         IBP_SET_META(ibp_data, &, ~IBP_META_UNEXPECTED_RETURN);
         return;
@@ -200,17 +186,7 @@ indirect_link_hashtable_insert(dcontext_t *dcontext) {
                 module_location_t *from_module = get_module_for_address(ibp_data->ibp_from_tag);
                 module_location_t *to_module = get_module_for_address(ibp_data->ibp_to_tag);
 
-#ifdef DEBUG
-                {
-                    fragment_t *from_f = fragment_lookup_bb(dcontext, ibp_data->ibp_from_tag);
-                    fragment_t *to_f = fragment_lookup_bb(dcontext, ibp_data->ibp_to_tag);
-                    fragment_t *last_f = linkstub_fragment(dcontext, dcontext->last_exit);
-                    if (from_f != NULL && to_f != NULL && last_f != NULL) {
-                        CS_LOG(PX" @"PX" -UR-> "PX" @"PX". Last fragment "PX" @"PX"\n",
-                               from_f->tag, from_f->start_pc, to_f->tag, to_f->start_pc, last_f->tag, last_f->start_pc);
-                    }
-                }
-#endif
+                DODEBUG({ dr_log_ibp_state(dcontext, 2); });
 
                 CS_DET("Unexpected return anomaly: 'to' address "PX" was never on the stack in %s("PX")->%s("PX")\n",
                        ibp_data->ibp_to_tag, from_module->module_name, ibp_data->ibp_from_tag, to_module->module_name,
@@ -267,9 +243,6 @@ harvest_resolved_imports(dcontext_t *dcontext) {
     local_security_audit_state_t *csd = GET_CS_DATA(dcontext);
     CROWD_SAFE_DEBUG_HOOK_VOID(__FUNCTION__);
 
-    if (!CROWD_SAFE_BB_GRAPH())
-        return;
-
     if (RESOLVED_IMPORT_PEEK(csd)->address) {
         int harvest_count = 0;
         hashcode_lock_acquire(); // cs-todo: new private lock for this?
@@ -306,9 +279,6 @@ push_nested_shadow_stack(dcontext_t *dcontext) {
     local_security_audit_state_t *csd = GET_CS_DATA(dcontext);
     CROWD_SAFE_DEBUG_HOOK_VOID(__FUNCTION__);
 
-    if (!CROWD_SAFE_BB_GRAPH())
-        return;
-
     csd->shadow_stack->return_address = (app_pc)SHADOW_STACK_CALLBACK_TAG;
     csd->shadow_stack->base_pointer = (app_pc)SHADOW_STACK_SENTINEL;
     csd->shadow_stack += 1;
@@ -321,9 +291,6 @@ pop_nested_shadow_stack(dcontext_t *dcontext) {
     local_security_audit_state_t *csd = GET_CS_DATA(dcontext);
     crowd_safe_thread_local_t *cstl = csd->crowd_safe_thread_local;
     CROWD_SAFE_DEBUG_HOOK_VOID(__FUNCTION__);
-
-    if (!CROWD_SAFE_BB_GRAPH())
-        return;
 
     while (csd->shadow_stack->base_pointer != (app_pc)SHADOW_STACK_SENTINEL)
         csd->shadow_stack--;
@@ -340,9 +307,6 @@ pop_shadow_stack_frame(dcontext_t *dcontext) {
     local_security_audit_state_t *csd = GET_CS_DATA(dcontext);
     crowd_safe_thread_local_t *cstl = csd->crowd_safe_thread_local;
     CROWD_SAFE_DEBUG_HOOK_VOID(__FUNCTION__);
-
-    if (!CROWD_SAFE_BB_GRAPH())
-        return;
 
     csd->shadow_stack--;
     check_shadow_stack_bounds(csd);

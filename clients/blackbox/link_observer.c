@@ -1,13 +1,5 @@
 #include "link_observer.h"
 #include <string.h>
-//#include "../../core/link.h"
-//#include "../../core/x86/instrument.h"
-//#include "../../core/x86/disassemble.h"
-//#include "../../core/os_shared.h"
-//#include "../../core/native_exec.h"
-//#include "../../core/module_shared.h"
-//#include "../../core/win32/ntdll.h"
-//#include "../../core/utils.h"
 #include "crowd_safe_util.h"
 #include "module_observer.h"
 #include "crowd_safe_trace.h"
@@ -55,10 +47,8 @@ init_link_observer(dcontext_t *dcontext, bool is_fork) {
         init_crowd_safe_log(true);
         *initialized_thread_count = 1;
     } else {
-        if (CROWD_SAFE_BB_GRAPH()) {
-            init_bb_hashtable();
-            ibp_hash_global_init(dcontext);
-        }
+        init_bb_hashtable();
+        ibp_hash_global_init(dcontext);
         initialized_thread_count = (int*)CS_ALLOC(sizeof(int));
         *initialized_thread_count = 0;
     }
@@ -69,13 +59,12 @@ init_link_observer(dcontext_t *dcontext, bool is_fork) {
     }
     if (CROWD_SAFE_NETWORK_MONITOR())
         init_network_monitor();
-    if (CROWD_SAFE_BB_GRAPH()) {
-        init_blacklist();
-        init_basic_block_observer(is_fork);
-        init_indirect_link_observer(dcontext);
-        init_crowd_safe_gencode();
-        write_graph_metadata();
-    }
+
+    init_blacklist();
+    init_basic_block_observer(is_fork);
+    init_indirect_link_observer(dcontext);
+    init_crowd_safe_gencode();
+    write_graph_metadata();
 
     dr_register_exit_event(process_exit);
 
@@ -97,54 +86,52 @@ link_observer_thread_init(dcontext_t *dcontext) {
     CS_DET("Call #%d to %s:%s for dcontext "PX" on thread %d\n",
         *initialized_thread_count, __FILE__, __FUNCTION__, p2int(dcontext), current_thread_id());
 
-    if (CROWD_SAFE_BB_GRAPH()) {
-        clock_type_t now = quick_system_time_millis();
-        cstl = (crowd_safe_thread_local_t *)CS_ALLOC(sizeof(crowd_safe_thread_local_t));
+    clock_type_t now = quick_system_time_millis();
+    cstl = (crowd_safe_thread_local_t *)CS_ALLOC(sizeof(crowd_safe_thread_local_t));
 #ifdef MONITOR_ENTRY_RATE
-        cstl->thread_init_tsc = now;
-        cstl->dr_entry_count = 0;
+    cstl->thread_init_tsc = now;
+    cstl->dr_entry_count = 0;
 #endif
-        cstl->bb_meta.state = NULL;
-        cstl->bb_meta.syscall_number = -1;
-        cstl->bb_meta.clobbered_black_box_hash = 0ULL;
-        cstl->bb_meta.is_black_box_thrash = false;
+    cstl->bb_meta.state = NULL;
+    cstl->bb_meta.syscall_number = -1;
+    cstl->bb_meta.clobbered_black_box_hash = 0ULL;
+    cstl->bb_meta.is_black_box_thrash = false;
 #ifdef DEBUG
-        cstl->bb_meta.created_ibp_edge = false;
+    cstl->bb_meta.created_ibp_edge = false;
 #endif
 #ifdef MONITOR_UIBP_ONLINE
-        cstl->thread_uibp.total = 0;
-        cstl->thread_uibp.within_expected = 0;
-        cstl->thread_uibp.within_unexpected = 0;
-        cstl->thread_uibp.from_expected = 0;
-        cstl->thread_uibp.to_expected = 0;
-        init_report_mask(&cstl->thread_uibp.report_mask, 0xfff, 0xffffffff);
+    cstl->thread_uibp.total = 0;
+    cstl->thread_uibp.within_expected = 0;
+    cstl->thread_uibp.within_unexpected = 0;
+    cstl->thread_uibp.from_expected = 0;
+    cstl->thread_uibp.to_expected = 0;
+    init_report_mask(&cstl->thread_uibp.report_mask, 0xfff, 0xffffffff);
 #endif
 #ifdef MONITOR_UNEXPECTED_IBP
-        {
-            uint i;
-            cstl->thread_clock.last_fcache_entry = 0ULL;
-            cstl->thread_clock.clock = 0ULL;
-            cstl->thread_clock.is_in_app_fcache = false;
-            cstl->thread_clock.last_uibp_timestamp = now;
-            cstl->thread_clock.last_suibp_timestamp = now;
-            cstl->thread_clock.last_uibp_is_admitted = false;
-            for (i = 0; i < UIBP_INTERVAL_COUNT; i++) {
-                cstl->thread_clock.consecutive_interval_count[i] = 0;
-                cstl->thread_clock.consecutive_admitted_interval_count[i] = 0;
-                cstl->thread_clock.consecutive_suspicious_interval_count[i] = 0;
-            }
-            cstl->stack_suspicion.uib_count = 0;
-            cstl->stack_suspicion.suib_count = 0;
+    {
+        uint i;
+        cstl->thread_clock.last_fcache_entry = 0ULL;
+        cstl->thread_clock.clock = 0ULL;
+        cstl->thread_clock.is_in_app_fcache = false;
+        cstl->thread_clock.last_uibp_timestamp = now;
+        cstl->thread_clock.last_suibp_timestamp = now;
+        cstl->thread_clock.last_uibp_is_admitted = false;
+        for (i = 0; i < UIBP_INTERVAL_COUNT; i++) {
+            cstl->thread_clock.consecutive_interval_count[i] = 0;
+            cstl->thread_clock.consecutive_admitted_interval_count[i] = 0;
+            cstl->thread_clock.consecutive_suspicious_interval_count[i] = 0;
         }
-#endif
-        cstl->stack_walk = CS_ALLOC(sizeof(return_address_iterator_t));
-        CS_TRACK(cstl->stack_walk, sizeof(return_address_iterator_t));
-
-        SET_CSTL(dcontext, cstl);
-
-        ibp_thread_init(dcontext);
-        indirect_link_observer_thread_init(dcontext);
+        cstl->stack_suspicion.uib_count = 0;
+        cstl->stack_suspicion.suib_count = 0;
     }
+#endif
+    cstl->stack_walk = CS_ALLOC(sizeof(return_address_iterator_t));
+    CS_TRACK(cstl->stack_walk, sizeof(return_address_iterator_t));
+
+    SET_CSTL(dcontext, cstl);
+
+    ibp_thread_init(dcontext);
+    indirect_link_observer_thread_init(dcontext);
 }
 
 void
@@ -162,9 +149,6 @@ crowd_safe_dispatch(dcontext_t *dcontext) {
 #endif
 
     crowd_safe_heartbeat(dcontext);
-
-    if (!CROWD_SAFE_BB_GRAPH())
-        return;
 
 #ifdef MONITOR_UNEXPECTED_IBP
     stop_fcache_clock(dcontext);
@@ -189,11 +173,6 @@ crowd_safe_dispatch(dcontext_t *dcontext) {
     // log_shadow_stack(dcontext, csd, "#disp#");
 
     if (IBP_IS_NEW_PATH(ibp_data)) {   // found a new IBP
-        fcache_enter_func_t fcache_enter;
-#ifdef DEBUG
-        fragment_t *from_fragment;
-#endif
-        fragment_t *to_fragment;
 
 #ifdef SEED_TLS_FOR_IBL_VERIFICATION
         ASSERT(ibp_data->ibp_from_tag == int2p(0x12345678));
@@ -221,26 +200,12 @@ crowd_safe_dispatch(dcontext_t *dcontext) {
         // expected returns must be filtered out in the IBL routine
         ASSERT(!(IBP_IS_RETURN(ibp_data) && !IBP_IS_UNEXPECTED_RETURN(ibp_data)));
 
-#ifdef DEBUG
-        from_fragment = fragment_lookup(dcontext, ibp_data->ibp_from_tag);
-        if (from_fragment == NULL)
-            CS_LOG("bogus statement to use the from_fragment "PFX"\n", from_fragment);
-#endif
-
         indirect_link_hashtable_insert(dcontext, false);
-
-        // find the fragment for the destination of the IBP
-        to_fragment = fragment_lookup(dcontext, ibp_data->ibp_to_tag);
-        if (TEST(FRAG_SHARED, to_fragment->flags))
-            fcache_enter = get_fcache_enter_shared_routine(dcontext);
-        else
-            fcache_enter = get_fcache_enter_private_routine(dcontext);
-        // return to fcache execution at the IBP destination fragment
 
 #ifdef MONITOR_UNEXPECTED_IBP
         start_fcache_clock(dcontext, false);
 #endif
-        enter_fcache(dcontext, fcache_enter, FCACHE_ENTRY_PC(to_fragment));
+        dr_enter_fcache(dcontext, ibp_data->ibp_to_tag);
         ASSERT_NOT_REACHED(); // app will not know this "call" happened, so never returns here
     } else {
         if (IBP_STACK_IS_PENDING(ibp_data)) {
@@ -361,13 +326,11 @@ crowd_safe_dispatch(dcontext_t *dcontext) {
 }
 
 void
-notify_linking_fragments(dcontext_t *dcontext, fragment_t *from, app_pc to, byte exit_ordinal) {
+notify_linking_fragments(dcontext_t *dcontext, app_pc from, app_pc to, byte exit_ordinal)
+{
     CROWD_SAFE_DEBUG_HOOK_VOID(__FUNCTION__);
 
-    if (!CROWD_SAFE_BB_GRAPH())
-        return;
-
-    notify_traversing_fragments(dcontext, from->tag, to, exit_ordinal, direct_edge); //, false))
+    notify_traversing_fragments(dcontext, from, to, exit_ordinal, direct_edge); //, false))
 }
 
 // it's very important for ibp hashes to not call this function directly.
@@ -384,9 +347,6 @@ notify_traversing_fragments(dcontext_t *dcontext, app_pc from, app_pc to,
     trampoline_tracker *trampoline;
 #endif
     CROWD_SAFE_DEBUG_HOOK_VOID(__FUNCTION__);
-
-    if (!CROWD_SAFE_BB_GRAPH())
-        return;
 
     ASSERT((from == to) || !IS_BUILDING_TAG(cstl, to));
 
@@ -463,9 +423,6 @@ void
 notify_traversing_syscall(dcontext_t *dcontext, app_pc dsbb_tag, int syscall_number) {
     CROWD_SAFE_DEBUG_HOOK_VOID(__FUNCTION__);
 
-    if (!CROWD_SAFE_BB_GRAPH())
-        return;
-
     /*
     if (syscall_number > 0x1a3) {
         module_location_t *dsbb_module = get_module_for_address(dsbb_tag);
@@ -529,15 +486,15 @@ destroy_link_observer() {
 
     if (CROWD_SAFE_NETWORK_MONITOR())
         destroy_network_monitor();
-    if (CROWD_SAFE_BB_GRAPH()) {
-        delete_blacklist();
-        ibp_hash_global_destroy();
-        destroy_bb_hashtable();
-        destroy_crowd_safe_gencode();
-        close_basic_block_observer();
-        destroy_indirect_link_observer();
-        flush_output_buffers();
-    }
+
+    delete_blacklist();
+    ibp_hash_global_destroy();
+    destroy_bb_hashtable();
+    destroy_crowd_safe_gencode();
+    close_basic_block_observer();
+    destroy_indirect_link_observer();
+    flush_output_buffers();
+
     if (CROWD_SAFE_MODULE_LOG())
         destroy_module_observer();
     close_crowd_safe_util();
@@ -559,15 +516,13 @@ link_observer_thread_exit(dcontext_t *dcontext) {
         CS_DET("Thread exit for dcontext "PFX" on thread %d; currently %dth initialized thread\n",
             p2int(dcontext), current_thread_id(), *initialized_thread_count);
 
-    if (CROWD_SAFE_BB_GRAPH()) {
-        ibp_thread_exit(dcontext);
+    ibp_thread_exit(dcontext);
 
-        indirect_link_observer_thread_exit(dcontext);
+    indirect_link_observer_thread_exit(dcontext);
 
-        cstl = GET_CSTL(dcontext);
-        dr_global_free(cstl->stack_walk, sizeof(return_address_iterator_t));
-        dr_global_free(cstl, sizeof(crowd_safe_thread_local_t));
-    }
+    cstl = GET_CSTL(dcontext);
+    dr_global_free(cstl->stack_walk, sizeof(return_address_iterator_t));
+    dr_global_free(cstl, sizeof(crowd_safe_thread_local_t));
 
     if (initialized_thread_count != NULL)
         (*initialized_thread_count)--;

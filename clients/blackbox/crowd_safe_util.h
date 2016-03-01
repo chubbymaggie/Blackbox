@@ -143,19 +143,14 @@ typedef uint clock_type_t;
 #define CROWD_SAFE_MONITOR_OPTION 1
 #define CROWD_SAFE_ALARM_OPTION 2
 #define CROWD_SAFE_NETWORK_MONITOR_OPTION 4
-#define CROWD_SAFE_BLOCK_HASH_OPTION 8
-#define CROWD_SAFE_PAIR_HASH_OPTION 0x10
-#define CROWD_SAFE_META_ON_CLOCK_OPTION 0x20
-#define CROWD_SAFE_RECORD_XHASH_OPTION 0x40
-#define CROWD_SAFE_BB_GRAPH() is_crowd_safe_option_active(CROWD_SAFE_BB_GRAPH_OPTION)
+#define CROWD_SAFE_META_ON_CLOCK_OPTION 8
+#define CROWD_SAFE_RECORD_XHASH_OPTION 0x10
 #define CROWD_SAFE_MONITOR() is_crowd_safe_option_active(CROWD_SAFE_MONITOR_OPTION)
 #define CROWD_SAFE_ALARM() is_crowd_safe_option_active(CROWD_SAFE_ALARM_OPTION)
 #define CROWD_SAFE_NETWORK_MONITOR() is_crowd_safe_option_active(CROWD_SAFE_NETWORK_MONITOR_OPTION)
-#define CROWD_SAFE_BLOCK_HASH() is_crowd_safe_option_active(CROWD_SAFE_BLOCK_HASH_OPTION)
-#define CROWD_SAFE_PAIR_HASH() is_crowd_safe_option_active(CROWD_SAFE_PAIR_HASH_OPTION)
 #define CROWD_SAFE_META_ON_CLOCK() is_crowd_safe_option_active(CROWD_SAFE_META_ON_CLOCK_OPTION)
 #define CROWD_SAFE_RECORD_XHASH() is_crowd_safe_option_active(CROWD_SAFE_RECORD_XHASH_OPTION)
-#define CROWD_SAFE_MODULE_LOG() is_crowd_safe_option_active(CROWD_SAFE_BB_GRAPH_OPTION | CROWD_SAFE_NETWORK_MONITOR_OPTION)
+#define CROWD_SAFE_MODULE_LOG() is_crowd_safe_option_active(CROWD_SAFE_NETWORK_MONITOR_OPTION)
 
 // CS-TODO: verify correctness of big/little endianness
 #ifndef __BYTE_ORDER
@@ -810,55 +805,6 @@ clear_pending_ibp(ibp_metadata_t *ibp_data) {
     ibp_data->ibp_from_tag = PC(0);
 }
 
-inline byte
-find_indirect_ordinal(fragment_t *f) {
-    linkstub_t *l;
-    byte exit_ordinal = 0;
-
-    for (l = FRAGMENT_EXIT_STUBS(f); l; l = LINKSTUB_NEXT_EXIT(l)) {
-        if (LINKSTUB_SPECIAL(l->flags))
-            continue;
-        if (LINKSTUB_INDIRECT(l->flags)) {
-            return exit_ordinal;
-        }
-        exit_ordinal++;
-    }
-
-    return 0xff;
-}
-
-inline byte
-find_call_ordinal(fragment_t *f) {
-    linkstub_t *l;
-    byte exit_ordinal = 0;
-
-    for (l = FRAGMENT_EXIT_STUBS(f); l; l = LINKSTUB_NEXT_EXIT(l)) {
-        if (LINKSTUB_SPECIAL(l->flags))
-            continue;
-        if (TEST(LINK_CALL, l->flags)) {
-            return exit_ordinal;
-        }
-        exit_ordinal++;
-    }
-
-    return 0xff;
-}
-
-inline byte
-count_ordinals(fragment_t *f) {
-    linkstub_t *l;
-    byte exit_ordinal = 0;
-
-    for (l = FRAGMENT_EXIT_STUBS(f); l; l = LINKSTUB_NEXT_EXIT(l)) {
-        if (!LINKSTUB_SPECIAL(l->flags))
-            exit_ordinal++;
-        if (TEST(LINK_CALL, l->flags))
-            exit_ordinal++; // one more for the call continuation
-    }
-
-    return exit_ordinal;
-}
-
 inline void
 check_shadow_stack_bounds(local_security_audit_state_t *csd)
 {
@@ -893,8 +839,6 @@ log_bb_meta(basic_block_meta_t *bb_meta) {
 
 inline void
 validate_ordinal(dcontext_t *dcontext, app_pc from, app_pc to, byte exit_ordinal, graph_edge_type edge_type) {
-    fragment_t *f;
-
     if (exit_ordinal < 2)
         return;
     if ((edge_type == call_continuation_edge) && (exit_ordinal < 3))
@@ -904,21 +848,8 @@ validate_ordinal(dcontext_t *dcontext, app_pc from, app_pc to, byte exit_ordinal
     if ((edge_type == gencode_write_edge) && (exit_ordinal < 5))
         return;
 
-    CS_LOG("High ordinal %d for edge type %d: "PX" to "PX"\n", exit_ordinal, edge_type, from, to);
-
-    f = fragment_lookup(dcontext, from);
-    if (f != NULL) {
-        linkstub_t *l;
-        byte exit_ordinal = 0x0;
-
-        for (l = FRAGMENT_EXIT_STUBS(f); l; l = LINKSTUB_NEXT_EXIT(l), exit_ordinal++) {
-            if (LINKSTUB_DIRECT(l->flags))
-                CS_LOG("\t#%d to "PX" flags: 0x%x; cti offset: "PX"\n",
-                    exit_ordinal, ((direct_linkstub_t*)l)->target_tag, l->flags, l->cti_offset);
-            else
-                CS_LOG("\t#%d flags: 0x%x; cti offset: "PX"\n", exit_ordinal, l->flags, l->cti_offset);
-        }
-    }
+    SEC_LOG("High ordinal %d for edge type %d: "PX" to "PX"\n", exit_ordinal, edge_type, from, to);
+    dr_fragment_log_ordinals(dcontext, from, "\t", 3);
 }
 
 inline byte default_edge_ordinal(graph_edge_type edge_type) {
@@ -932,24 +863,6 @@ inline byte default_edge_ordinal(graph_edge_type edge_type) {
         default:
             return 0; /* for branch taken */
     }
-}
-
-inline byte
-find_direct_link_exit_ordinal(fragment_t *from, app_pc to) {
-    linkstub_t *l;
-    byte exit_ordinal = 0x0;
-
-    for (l = FRAGMENT_EXIT_STUBS(from); l; l = LINKSTUB_NEXT_EXIT(l)) {
-        if (LINKSTUB_SPECIAL(l->flags))
-            continue;
-        if (LINKSTUB_DIRECT(l->flags) && (((direct_linkstub_t*)l)->target_tag == to)) {
-            return exit_ordinal;
-        }
-        exit_ordinal++;
-    }
-
-    CS_DET("Could not find the correct exit ordinal for direct link from tag "PX"\n", from->tag);
-    return 0xFF;
 }
 
 inline void
@@ -1119,23 +1032,19 @@ quick_system_time_millis() {
 
 inline void
 start_fcache_clock(dcontext_t *dcontext, bool is_direct_return) {
-    if (CROWD_SAFE_BB_GRAPH()) {
-        crowd_safe_thread_local_t *cstl = GET_CSTL(dcontext);
-        if (!is_direct_return) // else leave it as is
-            cstl->thread_clock.is_in_app_fcache = true;
-        cstl->thread_clock.last_fcache_entry = quick_system_time_millis();
-    }
+    crowd_safe_thread_local_t *cstl = GET_CSTL(dcontext);
+    if (!is_direct_return) // else leave it as is
+        cstl->thread_clock.is_in_app_fcache = true;
+    cstl->thread_clock.last_fcache_entry = quick_system_time_millis();
 }
 
 inline void
 stop_fcache_clock(dcontext_t *dcontext) {
-    if (CROWD_SAFE_BB_GRAPH()) {
-        crowd_safe_thread_local_t *cstl = GET_CSTL(dcontext);
-        if (cstl->thread_clock.is_in_app_fcache)
-            cstl->thread_clock.clock +=
-                (quick_system_time_millis() - cstl->thread_clock.last_fcache_entry - FCACHE_TRANSITION_LATENCY);
-        cstl->thread_clock.is_in_app_fcache = false;
-    }
+    crowd_safe_thread_local_t *cstl = GET_CSTL(dcontext);
+    if (cstl->thread_clock.is_in_app_fcache)
+        cstl->thread_clock.clock +=
+            (quick_system_time_millis() - cstl->thread_clock.last_fcache_entry - FCACHE_TRANSITION_LATENCY);
+    cstl->thread_clock.is_in_app_fcache = false;
 }
 #endif
 

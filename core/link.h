@@ -42,9 +42,6 @@
 #ifndef _CORE_LINK_H_ /* using different define than /usr/include/link.h */
 #define _CORE_LINK_H_ 1
 
-/* DR_API EXPORT TOFILE dr_audit.h */
-/* DR_API EXPORT BEGIN */
-
 /* linkstub_t flags
  * WARNING: flags field is a ushort, so max flag is 0x8000!
  */
@@ -128,17 +125,12 @@ enum {
 # define LINK_NI_SYSCALL_ALL LINK_NI_SYSCALL
 #endif
 
-/* DR_API EXPORT END */
-
 /* for easy printing */
 #ifndef LINKCOUNT_64_BITS
 #  define LINKCOUNT_FORMAT_STRING "%lu"
 #else
 #  define LINKCOUNT_FORMAT_STRING UINT64_FORMAT_STRING
 #endif
-
-/* DR_API EXPORT TOFILE dr_audit.h */
-/* DR_API EXPORT BEGIN */
 
 /* linkstub_t heap layout is now quite variable.  linkstubs are laid out
  * after the fragment_t structure, which is itself variable.
@@ -290,8 +282,6 @@ typedef struct _post_linkstub_t {
     ushort         padding;
 } post_linkstub_t;
 
-/* DR_API EXPORT END */
-
 /* For chaining together a list of inter-coarse-unit incoming stubs.  To
  * eliminate the need for wrappers for a series of fine-grained linkstubs, we
  * directly chain those -- so when walking, walk a fine entry's linkstubs
@@ -305,9 +295,6 @@ typedef struct _coarse_incoming_t {
     bool coarse;
     struct _coarse_incoming_t *next;
 } coarse_incoming_t;
-
-/* DR_API EXPORT TOFILE dr_audit.h */
-/* DR_API EXPORT BEGIN */
 
 /* this one does not take in flags b/c historically we used other fields */
 #define LINKSTUB_FAKE(l) (TEST(LINK_FAKE, (l)->flags))
@@ -344,8 +331,6 @@ typedef struct _coarse_incoming_t {
 #define LINKSTUB_NEXT_EXIT(l) \
     ((LINKSTUB_FINAL((l))) ? NULL : \
         ((linkstub_t *) (((byte*)(l)) + LINKSTUB_SIZE(l))))
-
-/* DR_API EXPORT END */
 
 /* we pay the cost of the check in release builds to have the
  * safety return value of NULL

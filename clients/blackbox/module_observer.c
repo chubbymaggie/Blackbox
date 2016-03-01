@@ -1,11 +1,5 @@
 #include "link_observer.h"
 #include <string.h>
-//#include "../../core/x86/instrument.h"
-//#include "../../core/os_shared.h"
-//#include "../../core/native_exec.h"
-//#include "../../core/module_shared.h"
-//#include "../../core/win32/ntdll.h"
-//#include "../../core/utils.h"
 #include "drsyms.h"
 #include "crowd_safe_util.h"
 #include "crowd_safe_trace.h"
@@ -382,7 +376,6 @@ init_module_observer(bool is_fork) {
     if (!is_fork) {
         app_pc s;
         bb_hash_t hash;
-        module_handle_t ntdllh = get_ntdll_base();
 
         module_count = (uint *)CS_ALLOC(sizeof(uint));
         *module_count = 0;
@@ -465,14 +458,12 @@ init_module_observer(bool is_fork) {
         module_list = (module_vector_t*)CS_ALLOC(sizeof(module_vector_t));
         module_vector_init(module_list, 20U, false, NULL, compare_module_vs_tag);
 
-        if (CROWD_SAFE_BB_GRAPH()) {
-            shadow_page_table = (shadow_page_table_t*)CS_ALLOC(sizeof(shadow_page_table_t));
-            shadow_page_table_init(shadow_page_table, 32U, false, free_shadow_page, compare_page_vs_tag);
+        shadow_page_table = (shadow_page_table_t*)CS_ALLOC(sizeof(shadow_page_table_t));
+        shadow_page_table_init(shadow_page_table, 32U, false, free_shadow_page, compare_page_vs_tag);
 
-            executable_write_list = (executable_write_list_t *) CS_ALLOC(sizeof(executable_write_list_t));
-            executable_write_list_init(executable_write_list, 32U, false, free_executable_write,
-                                       compare_executable_write_with_pc);
-        }
+        executable_write_list = (executable_write_list_t *) CS_ALLOC(sizeof(executable_write_list_t));
+        executable_write_list_init(executable_write_list, 32U, false, free_executable_write,
+                                   compare_executable_write_with_pc);
 
         black_box_singleton_list = (bb_hash_t *)CS_ALLOC(MAX_BLACK_BOX_SINGLETONS * sizeof(bb_hash_t));
         black_box_singleton_count = (uint *)CS_ALLOC(sizeof(uint));
@@ -516,6 +507,7 @@ static void /* callback */
 notify_module_loaded(void *dcontext, const module_data_t *data, bool loaded) {
     module_location_t *module;
     char *module_name = NULL;
+    module_data_t *main;
 
     module = (module_location_t *)CS_ALLOC(sizeof(module_location_t));
     module->start_pc = data->start;
@@ -570,27 +562,26 @@ notify_module_loaded(void *dcontext, const module_data_t *data, bool loaded) {
     blacklist_bind_module(module);
     hashcode_lock_release();
 
-    if (CROWD_SAFE_BB_GRAPH()) { // this stuff must happen at the point main() is loaded
-        module_data_t *main = dr_get_main_module();
-        if ((main != NULL) && (main->start == data->start)) {
-            uint i;
-            shadow_page_t *page;
+    // this stuff must happen at the point main() is loaded
+    main = dr_get_main_module();
+    if ((main != NULL) && (main->start == data->start)) {
+        uint i;
+        shadow_page_t *page;
 
-            write_meta_header();
+        write_meta_header();
 
-            MODULE_LOCK
-            for (i = 0; i < shadow_page_table->entries; i++) { // cs-todo: missing some shadow pages at this point
-                page = shadow_page_table->array[i];
-                if (page->pending_edges->entries == 0) {
-                    pending_gencode_edge_t *pending_edge = CS_ALLOC(sizeof(pending_gencode_edge_t));
-                    pending_edge->from = data->entry_point;
-                    pending_edge->from_module = module;
-                    pending_edge->edge_type = gencode_perm_edge;
-                    drvector_append(page->pending_edges, pending_edge);
-                }
+        MODULE_LOCK
+        for (i = 0; i < shadow_page_table->entries; i++) { // cs-todo: missing some shadow pages at this point
+            page = shadow_page_table->array[i];
+            if (page->pending_edges->entries == 0) {
+                pending_gencode_edge_t *pending_edge = CS_ALLOC(sizeof(pending_gencode_edge_t));
+                pending_edge->from = data->entry_point;
+                pending_edge->from_module = module;
+                pending_edge->edge_type = gencode_perm_edge;
+                drvector_append(page->pending_edges, pending_edge);
             }
-            MODULE_UNLOCK
         }
+        MODULE_UNLOCK
     }
 }
 
@@ -781,20 +772,16 @@ memory_released(dcontext_t *dcontext, app_pc start, app_pc end) {
 
 void
 add_shadow_pages(dcontext_t *dcontext, app_pc base, size_t size, bool safe_to_read) {
-    if (CROWD_SAFE_BB_GRAPH()) {
-        uint i, count = size >> 0xc;
-        for (i = 0; i < count; i++)
-            add_shadow_page(dcontext, base + (i * 0x1000), safe_to_read);
-    }
+    uint i, count = size >> 0xc;
+    for (i = 0; i < count; i++)
+        add_shadow_page(dcontext, base + (i * 0x1000), safe_to_read);
 }
 
 void
 remove_shadow_pages(dcontext_t *dcontext, app_pc base, size_t size) {
-    if (CROWD_SAFE_BB_GRAPH()) {
-        uint i, count = size >> 0xc;
-        for (i = 0; i < count; i++)
-            remove_shadow_page(dcontext, base + (i * 0x1000));
-    }
+    uint i, count = size >> 0xc;
+    for (i = 0; i < count; i++)
+        remove_shadow_page(dcontext, base + (i * 0x1000));
 }
 
 bool
@@ -835,9 +822,6 @@ observe_shadow_page_write(dcontext_t *dcontext, module_location_t *writing_modul
 {
     module_location_t *written_module;
     executable_write_t *previous_write, write = { pc, pc + size, 0 };
-
-    if (!CROWD_SAFE_BB_GRAPH())
-        return;
 
     written_module = get_module_for_address(pc);
     if (written_module->type == module_type_image)
@@ -882,9 +866,6 @@ write_gencode_edges(dcontext_t *dcontext, crowd_safe_thread_local_t *cstl, app_p
     executable_write_t *write;
     bb_hash_t to_entry_hash = NULL;
     bool is_black_box = to_module->black_box_singleton != NULL;
-
-    if (!CROWD_SAFE_BB_GRAPH())
-        return;
 
     MODULE_LOCK
     page = shadow_page_table_search(shadow_page_table, physical_to);
@@ -1039,9 +1020,6 @@ void
 notify_flush(app_pc base, size_t size) {
     uint i, j, page_count = (size >> 0xc);
 
-    if (!CROWD_SAFE_BB_GRAPH())
-        return;
-
     MODULE_LOCK
     for (i = 0; i < page_count; i++) {
         shadow_page_t *page = shadow_page_table_search(shadow_page_table, base + (i * 0x1000));
@@ -1130,10 +1108,8 @@ destroy_module_observer() {
 
     dr_global_free(anonymous_module_metadata, sizeof(anonymous_module_metadata_t));
 
-    if (CROWD_SAFE_BB_GRAPH()) {
-        shadow_page_table_delete(shadow_page_table);
-        dr_global_free(shadow_page_table, sizeof(shadow_page_table_t));
-    }
+    shadow_page_table_delete(shadow_page_table);
+    dr_global_free(shadow_page_table, sizeof(shadow_page_table_t));
 
     dr_global_free(black_box_singleton_list, MAX_BLACK_BOX_SINGLETONS * sizeof(bb_hash_t));
     dr_global_free(black_box_singleton_count, sizeof(uint));
@@ -1374,10 +1350,27 @@ load_relocations(module_location_t *location, const char *module_path) {
     relocation_table = CS_ALLOC(sizeof(relocation_table_t));
     relocation_table_init(relocation_table, 0x20, false, NULL, compare_relocation_page);
 
-    if (CROWD_SAFE_BB_GRAPH()) {
-        location->relocation_targets = CS_ALLOC(sizeof(relocation_target_table_t));
+    location->relocation_targets = CS_ALLOC(sizeof(relocation_target_table_t));
+    relocation_target_table_init_ex(
+        location->relocation_targets,
+        KEY_SIZE,
+        HASH_INTPTR,
+        false,
+        false,
+        NULL,
+        NULL, /* no custom hashing */
+        NULL);
+
+    strcat(relocation_file_path, monitor_dataset_dir);
+    strcat(relocation_file_path, location->module_name);
+    strcat(relocation_file_path, ".relocations.dat");
+    relocation_file = dr_open_file(relocation_file_path, DR_FILE_READ);
+    parse_relocations = (relocation_file == INVALID_FILE);
+    if (parse_relocations) {
+        CS_WARN("Failed to open relocation file read-only: %s\n", relocation_file_path);
+        all_relocation_targets = CS_ALLOC(sizeof(relocation_target_table_t));
         relocation_target_table_init_ex(
-            location->relocation_targets,
+            all_relocation_targets,
             KEY_SIZE,
             HASH_INTPTR,
             false,
@@ -1385,47 +1378,26 @@ load_relocations(module_location_t *location, const char *module_path) {
             NULL,
             NULL, /* no custom hashing */
             NULL);
-
-        strcat(relocation_file_path, monitor_dataset_dir);
-        strcat(relocation_file_path, location->module_name);
-        strcat(relocation_file_path, ".relocations.dat");
-        relocation_file = dr_open_file(relocation_file_path, DR_FILE_READ);
-        parse_relocations = (relocation_file == INVALID_FILE);
-        if (parse_relocations) {
-            CS_WARN("Failed to open relocation file read-only: %s\n", relocation_file_path);
-            all_relocation_targets = CS_ALLOC(sizeof(relocation_target_table_t));
-            relocation_target_table_init_ex(
-                all_relocation_targets,
-                KEY_SIZE,
-                HASH_INTPTR,
-                false,
-                false,
-                NULL,
-                NULL, /* no custom hashing */
-                NULL);
-        } else {
-            uint64 relocation_file_size;
-            uint i, relocation_entry_count;
-            size_t relocation_array_size;
-            uint *relocation_array;
-
-            dr_file_size(relocation_file, &relocation_file_size);
-            if (relocation_file_size > 0ULL) {
-                relocation_entry_count = (uint)(relocation_file_size / 4);
-                relocation_array_size = (size_t) relocation_file_size;
-                relocation_array = (uint *)dr_map_file(relocation_file, &relocation_array_size, 0ULL, PC(0), DR_MEMPROT_READ, 0UL);
-                for (i = 0; i < relocation_entry_count; i++) {
-                    relocation_target_table_add(location->relocation_targets, p2int(location->start_pc + relocation_array[i]), 1);
-                }
-
-                CS_LOG("Stuffed %d relocation entries in the hashtable from %s\n", relocation_entry_count, relocation_file_path);
-
-                dr_unmap_file((void *) relocation_array, relocation_array_size);
-            }
-            dr_close_file(relocation_file);
-        }
     } else {
-        location->relocation_targets = NULL;
+        uint64 relocation_file_size;
+        uint i, relocation_entry_count;
+        size_t relocation_array_size;
+        uint *relocation_array;
+
+        dr_file_size(relocation_file, &relocation_file_size);
+        if (relocation_file_size > 0ULL) {
+            relocation_entry_count = (uint)(relocation_file_size / 4);
+            relocation_array_size = (size_t) relocation_file_size;
+            relocation_array = (uint *)dr_map_file(relocation_file, &relocation_array_size, 0ULL, PC(0), DR_MEMPROT_READ, 0UL);
+            for (i = 0; i < relocation_entry_count; i++) {
+                relocation_target_table_add(location->relocation_targets, p2int(location->start_pc + relocation_array[i]), 1);
+            }
+
+            CS_LOG("Stuffed %d relocation entries in the hashtable from %s\n", relocation_entry_count, relocation_file_path);
+
+            dr_unmap_file((void *) relocation_array, relocation_array_size);
+        }
+        dr_close_file(relocation_file);
     }
 
     while (relocation_table_index < relocation_table_end) {
@@ -1481,38 +1453,8 @@ load_relocations(module_location_t *location, const char *module_path) {
             CS_WARN("Failed to open new relocation file %s\n", relocation_file_path);
         }
     }
-    /*
 
-            relocation_file_path[0] = '\0';
-            strcat(relocation_file_path, "C:\\Users\\minotaur\\AppData\\LocalLow\\Adobe\\Acrobat\\11.0\\foo.txt");
-            //strcat(relocation_file_path, location->module_name);
-            //strcat(relocation_file_path, ".relocations.dat");
-            //relocation_file = dr_open_file(relocation_file_path, DR_FILE_WRITE_REQUIRE_NEW);
-            relocation_file = dr_open_file(relocation_file_path, DR_FILE_READ);
-            if (relocation_file == INVALID_FILE || relocation_file == NULL) {
-                CS_WARN("Failed to open read-only: %s\n", relocation_file_path);
-            } else {
-                CS_WARN("But I can open read-only %s\n", relocation_file_path);
-            }
-            / *
-            if (relocation_file == INVALID_FILE || relocation_file == NULL) {
-                //CS_WARN("Failed to open new relocation file %s too\n", relocation_file_path);
-                relocation_file_path[strlen(monitor_dataset_dir)] = '\0';
-                strcat(relocation_file_path, "ntdll.dll.relocations.dat");
-                relocation_file = dr_open_file(relocation_file_path, DR_FILE_READ);
-                if (relocation_file == INVALID_FILE || relocation_file == NULL) {
-                    CS_WARN("Failed to open an existing relocation file %s read-only\n", relocation_file_path);
-                } else {
-                    CS_WARN("But I can open an existing relocation file %s read-only\n", relocation_file_path);
-                }
-                relocation_file = NULL;
-            }
-            * /
-        }
-    }
-    */
-
-    if (parse_relocations) { // && relocation_file != INVALID_FILE && relocation_file != NULL) {
+    if (parse_relocations) {
         uint i, j, prot;
         relocation_entry_t relocation;
         ptr_uint_t *absolute_operand_address;

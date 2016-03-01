@@ -736,11 +736,20 @@ dispatch_enter_dynamorio(dcontext_t *dcontext)
             dcontext->next_tag = EXIT_TARGET_TAG(dcontext, dcontext->last_fragment,
                                                  dcontext->last_exit);
 #ifdef SECURITY_AUDIT
-            audit_fragment_link(dcontext, true);
+            /* assuming trace head has already been linked as a bb */
+            if (!TEST(FRAG_IS_TRACE, dcontext->last_fragment->flags)
+                /* && !TEST(LINK_FRAG_OFFS_AT_END, dcontext->last_exit->flags)*/) {
+                byte ordinal = dr_fragment_find_direct_ordinal(dcontext->last_fragment,
+                                                               dcontext->next_tag);
+                if (ordinal < 0xff) {
+                    audit_fragment_direct_link(dcontext, dcontext->last_fragment->tag,
+                                               dcontext->next_tag, ordinal);
+                }
+            }
 #endif
         } else {
 #ifdef SECURITY_AUDIT
-            audit_fragment_link(dcontext, false);
+            audit_fragment_indirect_link(dcontext);
 #endif
             /* get src info from coarse ibl exit into the right place */
             if (DYNAMO_OPTION(coarse_units)) {

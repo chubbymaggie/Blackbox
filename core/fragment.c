@@ -3834,7 +3834,16 @@ fragment_remove(dcontext_t *dcontext, fragment_t *f, bool is_live_trace_componen
     fragment_table_t *table = GET_FTABLE(pt, f->flags);
 
 #ifdef SECURITY_AUDIT
-    audit_fragment_remove(dcontext, f);
+    if (TEST(FRAG_IS_TRACE, f->flags) && TEST(FRAG_SHARED, f->flags)) {
+        SEC_LOG(4, "Removing trace "PX" with flags 0x%x\n", f->tag, f->flags);
+        audit_fragment_remove(dcontext, f->tag);
+    } else if (!(is_live_trace_component && TEST(FRAG_SHARED, f->flags)) &&
+               !TEST(FRAG_IS_TRACE, f->flags) && !TEST(FRAG_TEMP_PRIVATE, f->flags)) {
+        if (f->also.also_vmarea != NULL)
+            SEC_LOG(2, "Removing one of multiple versions of BB "PX"!\n", f->tag);
+        SEC_LOG(4, "Removing BB "PX" with flags 0x%x\n", f->tag, f->flags);
+        audit_fragment_remove(dcontext, f->tag);
+    }
 #endif
 
     ASSERT(TEST(FRAG_SHARED, f->flags) || dcontext != GLOBAL_DCONTEXT);

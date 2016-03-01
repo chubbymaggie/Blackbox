@@ -54,12 +54,15 @@ do { \
 /* DR_API EXPORT TOFILE dr_audit.h */
 /* DR_API EXPORT BEGIN */
 
-#define DCONTEXT_NEXT_TAG(dc) dcontext_get_next_tag(dc)
-
 #ifdef API_EXPORT_ONLY
 #include "dr_config.h"
+
 typedef void dcontext_t;
-typedef linkstub_t * (*fcache_enter_func_t)(dcontext_t *dcontext);
+
+typedef struct _dr_fragment_t {
+    app_pc    tag;
+    uint      flags;
+} dr_fragment_t;
 #endif
 
 /****************************************************************************
@@ -82,15 +85,15 @@ typedef struct _audit_callbacks_t {
                                       int line, const char *expr);
     void (*audit_dispatch)(dcontext_t *dcontext);
     void (*audit_fcache_enter)(dcontext_t *dcontext);
-    void (*audit_fragment_link)(dcontext_t *dcontext, bool direct);
-    void (*audit_fragment_link_tags)(dcontext_t *dcontext, app_pc from_tag,
-                                     app_pc to_tag, byte exit_ordinal);
+    void (*audit_fragment_indirect_link)(dcontext_t *dcontext);
+    void (*audit_fragment_direct_link(dcontext_t *dcontext, app_pc from,
+                                      app_pc to, byte ordinal);
     void (*audit_syscall)(dcontext_t *dcontext, app_pc tag, int syscall_number);
     bool (*audit_filter_syscall)(int sysnum);
     void (*audit_bb_link_complete)(dcontext_t *dcontext, fragment_t *f);
     void (*audit_translation)(dcontext_t *dcontext, app_pc start_pc, instrlist_t *ilist,
                               int sysnum);
-    void (*audit_fragment_remove)(dcontext_t *dcontext, fragment_t *f);
+    void (*audit_fragment_remove)(dcontext_t *dcontext, app_pc tag);
     void (*audit_cache_reset)(dcontext_t *dcontext);
     void (*audit_memory_executable_change)(dcontext_t *dcontext, app_pc base, size_t size,
                                            bool becomes_executable, bool safe_to_read);
@@ -141,7 +144,7 @@ extern audit_callbacks_t *audit_callbacks;
 
 DR_API
 void
-dr_enter_fcache(dcontext_t *dcontext, fcache_enter_func_t entry, cache_pc pc);
+dr_enter_fcache(dcontext_t *dcontext, app_pc pc);
 
 DR_API
 void
@@ -150,6 +153,48 @@ dr_register_audit_callbacks(audit_callbacks_t *callbacks);
 DR_API
 app_pc
 dcontext_get_next_tag(dcontext_t *dcontext);
+
+DR_API
+byte *
+dr_get_ntdll_proc_address(const char *name);
+
+DR_API
+ibp_data_t
+dcontext_get_ibp_data(dcontext_t *dcontext);
+
+DR_API
+app_pc
+dr_get_building_trace_tail(dcontext_t *dcontext, bool *is_return, app_pc *trace_tag);
+
+DR_API
+byte
+dr_fragment_find_direct_ordinal(fragment_t *from, app_pc to);
+
+DR_API
+byte
+dr_fragment_find_indirect_ordinal(fragment_t *f);
+
+DR_API
+byte
+dr_fragment_find_call_ordinal(fragment_t *f);
+
+DR_API
+byte
+dr_fragment_count_ordinals(fragment_t *f);
+
+DR_API
+void
+dr_fragment_log_ordinals(dcontext_t *dcontext, app_pc tag,
+                         const char *line_prefix, uint loglevel);
+
+DR_API
+void
+dr_log_ibp_state(dcontext_t *dcontext, uint loglevel);
+
+DR_API
+void
+dr_log_last_exit(dcontext_t *dcontext, const char *prefix, uint loglevel);
+
 
 /****************************************************************************
  * SECURITY AUDITING INTERNAL_CALLBACKS
@@ -271,22 +316,21 @@ audit_fcache_enter(dcontext_t *dcontext)
 /* links */
 
 inline void
-audit_fragment_link(dcontext_t *dcontext, bool direct)
+audit_fragment_indirect_link(dcontext_t *dcontext)
 {
     if (audit_callbacks == NULL)
         return;
 
-    audit_callbacks->audit_fragment_link(dcontext, direct);
+    audit_callbacks->audit_fragment_indirect_link(dcontext, direct);
 }
 
 inline void
-audit_fragment_link_tags(dcontext_t *dcontext, app_pc from_tag, app_pc to_tag,
-                         byte exit_ordinal)
+audit_fragment_direct_link(dcontext_t *dcontext, app_pc from, app_pc to, byte ordinal)
 {
     if (audit_callbacks == NULL)
         return;
 
-    audit_callbacks->audit_fragment_link_tags(dcontext, from_tag, to_tag, exit_ordinal);
+    audit_callbacks->audit_fragment_link_tags(dcontext, from, to, exit_ordinal);
 }
 
 inline void
@@ -328,12 +372,12 @@ audit_translation(dcontext_t *dcontext, app_pc start_pc, instrlist_t *ilist, int
 }
 
 inline void
-audit_fragment_remove(dcontext_t *dcontext, fragment_t *f)
+audit_fragment_remove(dcontext_t *dcontext, app_pc tag)
 {
     if (audit_callbacks == NULL)
         return;
 
-    audit_callbacks->audit_fragment_remove(dcontext, f);
+    audit_callbacks->audit_fragment_remove(dcontext, tag);
 }
 
 inline void

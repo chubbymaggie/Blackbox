@@ -44,9 +44,6 @@
 
 #include "hashtable.h"
 
-/* DR_API EXPORT TOFILE dr_audit.h */
-/* DR_API EXPORT BEGIN */
-
 /* Flags, stored in fragment_t->flags bitfield
  */
 #define FRAG_IS_FUTURE              0x000001
@@ -97,8 +94,6 @@
 #define FRAG_IS_EXTRA_VMAREA        0x040000
 #define FRAG_IS_EXTRA_VMAREA_INIT   0x080000
 
-/* DR_API EXPORT END */
-
 #ifdef PROGRAM_SHEPHERDING
 /* indicates from memory that wasn't part of code from image on disk */
 # define FRAG_DYNGEN                0x100000
@@ -114,9 +109,6 @@
  */
 # define FRAG_HAS_MOV_SEG           0x200000
 #endif
-
-/* DR_API EXPORT TOFILE dr_audit.h */
-/* DR_API EXPORT BEGIN */
 
 #ifdef X64
 /* this fragment contains 32-bit code */
@@ -160,8 +152,6 @@
 /* This fragment immediately follows a free entry in the fcache */
 #define FRAG_FOLLOWS_FREE_ENTRY   0x80000000
 
-/* DR_API EXPORT END */
-
 /* Flags that a future fragment can transfer to a real on taking its place:
  * Naturally we don't want FRAG_IS_FUTURE or FRAG_WAS_DELETED.
  * FRAG_SHARED has to already be on the real fragment.
@@ -178,14 +168,6 @@
 
 /* to save space size field is a ushort => maximum fragment size */
 enum { MAX_FRAGMENT_SIZE = USHRT_MAX };
-
-/* DR_API EXPORT TOFILE dr_audit.h */
-/* DR_API EXPORT BEGIN */
-
-#ifdef API_EXPORT_ONLY
-typedef void * translation_info_t;
-typedef struct _trace_t trace_t;
-#endif
 
 /* fragment structure used for basic blocks and traces
  * this is the core structure shared by everything
@@ -323,8 +305,6 @@ typedef struct _private_trace_t {
     private_fragment_t  f;
     trace_only_t        t;
 } private_trace_t;
-
-/* DR_API EXPORT END */
 
 /* convenient way to deal w/ trace fields: this returns trace_only_t* */
 #define TRACE_FIELDS(f) (ASSERT(TEST(FRAG_IS_TRACE, (f)->flags)), \
@@ -516,9 +496,6 @@ typedef struct _per_thread_t {
     (f->start_pc + f->prefix_size - FRAGMENT_BASE_PREFIX_SIZE(f->flags))
 #define FCACHE_IBT_ENTRY_PC(f) (f->start_pc)
 
-/* DR_API EXPORT TOFILE dr_audit.h */
-/* DR_API EXPORT BEGIN */
-
 /* translation info pointer can be at end of any struct, so rather than have
  * 8 different structs we keep it out of the formal struct definitions
  */
@@ -532,8 +509,6 @@ typedef struct _per_thread_t {
    (TEST(FRAG_FAKE, (f)->flags) ? \
     (ASSERT(false && "fake fragment_t has no exit stubs!"), (linkstub_t *)NULL) : \
     ((linkstub_t *)(((byte*)(f)) + FRAGMENT_STRUCT_SIZE((f)->flags))))
-
-/* DR_API EXPORT END */
 
 /* selfmod copy size is stored at very end of fragment space */
 #define FRAGMENT_SELFMOD_COPY_SIZE(f)                \

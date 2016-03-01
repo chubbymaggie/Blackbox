@@ -44,32 +44,18 @@ audit_fcache_enter(dcontext_t *dcontext)
 }
 
 static void
-audit_fragment_link(dcontext_t *dcontext, bool direct)
+audit_fragment_indirect_link(dcontext_t *dcontext)
 {
-    if (direct) {
-        /* assuming trace head has already been linked as a bb */
-        if (!TEST(FRAG_IS_TRACE, dcontext->last_fragment->flags)
-            /* && !TEST(LINK_FRAG_OFFS_AT_END, dcontext->last_exit->flags)*/) {
-            byte exit_ordinal = find_direct_link_exit_ordinal(dcontext->last_fragment,
-                                                              dcontext->next_tag);
-            if (exit_ordinal < 0xff) {
-                notify_linking_fragments(dcontext, dcontext->last_fragment,
-                                         dcontext->next_tag, exit_ordinal);
-            }
-        }
-    } else {
-        indirect_link_hashtable_insert(dcontext);
-    }
+    indirect_link_hashtable_insert(dcontext);
 }
 
 static void
-audit_fragment_link_tags(dcontext_t *dcontext, app_pc from_tag, app_pc to_tag,
-                         byte exit_ordinal)
+audit_fragment_direct_link(dcontext_t *dcontext, app_pc from, app_pc to, byte ordinal)
 {
     if (ordinal == 0xff)
-        notify_incoming_link(dcontext, from_tag, to_tag);
+        notify_incoming_link(dcontext, from, to);
     else
-        notify_linking_fragments(dcontext, from_tag, to_tag, exit_ordinal);
+        notify_linking_fragments(dcontext, from, to, ordinal);
 }
 
 static void
@@ -210,9 +196,9 @@ audit_close_log()
 }
 
 static void
-audit_bb_link_complete(dcontext_t *dcontext, fragment_t *f)
+audit_bb_link_complete(dcontext_t *dcontext, app_pc tag)
 {
-    notify_basic_block_linking_complete(dcontext, f);
+    notify_basic_block_linking_complete(dcontext, tag);
 }
 
 static void
@@ -222,18 +208,9 @@ audit_cache_reset(dcontext_t *dcontext)
 }
 
 static void
-audit_fragment_remove(dcontext_t *dcontext, fragment_t *f)
+audit_fragment_remove(dcontext_t *dcontext, app_pc tag)
 {
-    if (TEST(FRAG_IS_TRACE, f->flags) && TEST(FRAG_SHARED, f->flags)) {
-        CS_DET("Removing trace "PX" with flags 0x%x\n", f->tag, f->flags);
-        notify_basic_block_removed(dcontext, f->tag);
-    } else if (!(is_live_trace_component && TEST(FRAG_SHARED, f->flags)) &&
-               !TEST(FRAG_IS_TRACE, f->flags) && !TEST(FRAG_TEMP_PRIVATE, f->flags)) {
-        if (f->also.also_vmarea != NULL)
-            CS_WARN("Removing one of multiple versions of BB "PX"!\n", f->tag);
-        CS_DET("Removing BB "PX" with flags 0x%x\n", f->tag, f->flags);
-        notify_basic_block_removed(dcontext, f->tag);
-    }
+    notify_basic_block_removed(dcontext, tag);
 }
 
 static void
@@ -332,7 +309,7 @@ audit_intercept(app_pc start, app_pc end)
 }
 
 static void
-audit_code_modification(dcontext_t *dcontext, fragment_t *f, app_pc next_pc,
+audit_code_modification(dcontext_t *dcontext, dr_fragment_t *f, app_pc next_pc,
                         app_pc target, size_t write_size)
 {
     notify_code_modification(dcontext, f, next_pc, target, write_size);
@@ -455,8 +432,6 @@ dr_init(client_id_t id)
     dr_register_audit_callbacks(&callbacks);
 
     monitor_dataset_dir = NULL;
-
-    crowd_safe_options |= CROWD_SAFE_BB_GRAPH_OPTION;
 
     dr_get_string_option("dataset_home",
                          monitor_dataset_dir, MAX_MONITOR_DATASET_DIR_LEN)

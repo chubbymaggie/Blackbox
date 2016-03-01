@@ -1,10 +1,4 @@
 #include "basic_block_observer.h"
-//#include "../../core/fragment.h" // cs-hack
-//#include "../../core/x86/arch.h"
-//#include "../../core/x86/instr.h"
-//#include "../../core/x86/instrument.h"
-//#include "../../core/x86/instr_create.h"
-//#include "../../core/x86/disassemble.h"
 #include "link_observer.h"
 #include "module_observer.h"
 #include "crowd_safe_util.h"
@@ -16,9 +10,7 @@
 #include "blacklist.h"
 
 #ifdef WINDOWS
-# include "ntdll_types.h"
 # include <windows.h>
-# include "../../core/win32/ntdll.h"
 #endif
 
 /**** Public Fields ****/
@@ -104,6 +96,11 @@ struct syscall_trampolines_t {
 static syscall_trampolines_t syscall_trampolines_nt;
 static syscall_trampolines_t syscall_trampolines_zw;
 
+#define FIRST_NT_SYSCALL "NtAcceptConnectPort"
+#define LAST_NT_SYSCALL "NtYieldExecution"
+#define FIRST_ZW_SYSCALL "ZwMapUserPhysicalPagesScatter"
+#define LAST_ZW_SYSCALL "ZwWow64CallFunction64"
+
 #ifdef DEBUG // spec hack
 static app_pc *libiomp5md_start;
 #endif
@@ -167,28 +164,21 @@ init_basic_block_observer(bool isFork) {
     *libiomp5md_start = 0;
 #endif
 
-    {
-        module_handle_t ntdllh = get_ntdll_base();
+    syscall_trampolines_nt.start_pc = dr_get_ntdll_proc_address(FIRST_NT_SYSCALL);
+    syscall_trampolines_nt.end_pc = dr_get_ntdll_proc_address(LAST_NT_SYSCALL);
+    CS_DET("Syscall trampolines for Nt: start "PX" and end "PX".\n",
+           syscall_trampolines_nt.start_pc, syscall_trampolines_nt.end_pc);
 
-        syscall_trampolines_nt.start_pc = (byte *)get_proc_address(ntdllh, "NtAcceptConnectPort");
-        syscall_trampolines_nt.end_pc = (byte *)get_proc_address(ntdllh, "NtYieldExecution");
-        CS_DET("Syscall trampolines for Nt: start "PX" and end "PX".\n",
-            syscall_trampolines_nt.start_pc, syscall_trampolines_nt.end_pc);
-
-        syscall_trampolines_zw.start_pc = (byte *)get_proc_address(ntdllh, "ZwMapUserPhysicalPagesScatter");
-        syscall_trampolines_zw.end_pc = (byte *)get_proc_address(ntdllh, "ZwWow64CallFunction64");
-        CS_DET("Syscall trampolines for Zw: start "PX" and end "PX".\n",
-            syscall_trampolines_zw.start_pc, syscall_trampolines_zw.end_pc);
-    }
+    syscall_trampolines_zw.start_pc = dr_get_ntdll_proc_address(FIRST_ZW_SYSCALL);
+    syscall_trampolines_zw.end_pc = dr_get_ntdll_proc_address(LAST_ZW_SYSCALL);
+    CS_DET("Syscall trampolines for Zw: start "PX" and end "PX".\n",
+           syscall_trampolines_zw.start_pc, syscall_trampolines_zw.end_pc);
 }
 
 void
 write_graph_metadata() {
     app_pc s;
     bb_state_t meta_node_state = { 0, BB_STATE_LIVE | BB_STATE_SINGLETON | BB_STATE_COMMITTED, 0ULL, graph_meta_singleton, 0 };
-
-    if (!CROWD_SAFE_BB_GRAPH())
-        return;
 
     hashcode_lock_acquire();
 
@@ -232,9 +222,6 @@ notify_basic_block_constructed(dcontext_t *dcontext,
     trampoline_tracker *trampoline;
 #endif
     CROWD_SAFE_DEBUG_HOOK_VOID(__FUNCTION__);
-
-    if (!CROWD_SAFE_BB_GRAPH())
-        return;
 
     if (tag == int2p(0x772e8e57)) { /* hardcoding the exit syscall, which is not subject to ASLR */
         extern uint64 process_start_time;
@@ -452,9 +439,6 @@ void
 notify_trace_constructed(dcontext_t *dcontext, instrlist_t *ilist) {
     instr_t *i, *next;
 
-    if (!CROWD_SAFE_BB_GRAPH())
-        return;
-
     for (i = instrlist_first(ilist); i != NULL; i = next) {
         next = instr_get_next(i);
         if (instr_is_call(i) && CALL_WILL_RETURN(i))
@@ -464,9 +448,6 @@ notify_trace_constructed(dcontext_t *dcontext, instrlist_t *ilist) {
 
 void
 notify_basic_block_removed(dcontext_t *dcontext, app_pc tag) {
-    if (!CROWD_SAFE_BB_GRAPH())
-        return;
-
     ibp_tag_remove(dcontext, tag); // will remove xrefs
 
     hashcode_lock_acquire();
@@ -478,9 +459,6 @@ notify_basic_block_removed(dcontext_t *dcontext, app_pc tag) {
 
 void
 notify_cache_reset(dcontext_t *dcontext) {
-    if (!CROWD_SAFE_BB_GRAPH())
-        return;
-
     CS_WARN("Cache reset!\n");
 
     ibp_clear(dcontext);

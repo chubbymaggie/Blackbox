@@ -96,8 +96,7 @@ void
 notify_gencode_complete() {
     CROWD_SAFE_DEBUG_HOOK_VOID(__FUNCTION__);
 
-    if (CROWD_SAFE_BB_GRAPH())
-        *gencode_in_progress = false;
+    *gencode_in_progress = false;
 }
 
 void
@@ -141,9 +140,6 @@ void
 notify_gencode_starting() {
     CROWD_SAFE_DEBUG_HOOK_VOID(__FUNCTION__);
 
-    if (!CROWD_SAFE_BB_GRAPH())
-        return;
-
     ASSERT(!*gencode_in_progress);
 
     top_level_jump_targets->indirect_link_notification_start = (instr_t *) PC(0);
@@ -160,9 +156,6 @@ insert_indirect_link_branchpoint(dcontext_t *dcontext, instrlist_t *bb, app_pc b
     uint flags = 0UL;
     uint added_size = 0U;
     CROWD_SAFE_DEBUG_HOOK(__FUNCTION__, 0);
-
-    if (!CROWD_SAFE_BB_GRAPH())
-        return 0;
 
     if (ibl_instr->src0.kind != PC_kind) {
         if (ibl_instr->src0.kind == BASE_DISP_kind) {
@@ -253,9 +246,6 @@ prepare_fcache_return_from_ibl(dcontext_t *dcontext, instrlist_t *bb,
                                app_pc ibl_routine_start_pc) {
     CROWD_SAFE_DEBUG_HOOK_VOID(__FUNCTION__);
 
-    if (!CROWD_SAFE_BB_GRAPH())
-        return;
-
     if (is_tracked_ibl_routine(ibl_routine_start_pc)) {
         APP(bb, SAVE_TO_TLS(dcontext,
             REG_XBX,
@@ -273,9 +263,6 @@ append_indirect_link_notification_hook(dcontext_t *dcontext, instrlist_t *ilist,
     instr_t *restore_temp1, *shadow_stack_resolution_jump, *indirect_link_notification_jump;
     extern bool verify_shadow_stack;
     CROWD_SAFE_DEBUG_HOOK_VOID(__FUNCTION__);
-
-    if (!CROWD_SAFE_BB_GRAPH())
-        return;
 
     ASSERT(*gencode_in_progress);
 
@@ -399,9 +386,6 @@ append_indirect_link_notification(dcontext_t *dcontext, instrlist_t *ilist,
                                   instr_t *fragment_not_found) {
     CROWD_SAFE_DEBUG_HOOK_VOID(__FUNCTION__);
 
-    if (!CROWD_SAFE_BB_GRAPH())
-        return;
-
     if (!is_tracked_ibl_routine(indirect_branch_lookup_routine)) {
         CS_WARN("Skipping instrumentation of untracked ibl routine at %x\n",
                 indirect_branch_lookup_routine);
@@ -434,9 +418,6 @@ adjust_for_ibl_instrumentation(dcontext_t *dcontext, app_pc pc, app_pc raw_start
 void
 notify_emitting_instruction(instr_t *instr, cache_pc pc) {
     CROWD_SAFE_DEBUG_HOOK_QUIET_VOID(__FUNCTION__);
-
-    if (!CROWD_SAFE_BB_GRAPH())
-        return;
 
     if (!*gencode_in_progress) return;
 
@@ -488,17 +469,13 @@ void
 track_ibl_routine(byte *pc) {
     CROWD_SAFE_DEBUG_HOOK_VOID(__FUNCTION__);
 
-    if (CROWD_SAFE_BB_GRAPH())
-        drvector_append(instrumented_ibl_routine_start_pcs, pc);
+    drvector_append(instrumented_ibl_routine_start_pcs, pc);
 }
 
 #ifdef WINDOWS
 void
 track_shared_syscall_routine(byte *pc) {
     CROWD_SAFE_DEBUG_HOOK_VOID(__FUNCTION__);
-
-    if (!CROWD_SAFE_BB_GRAPH())
-        return;
 
     CS_DET("Shared syscall routine at 0x%p\n", pc);
     drvector_append(instrumented_syscall_routine_entry_points, pc);

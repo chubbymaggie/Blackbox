@@ -88,7 +88,7 @@ void
 write_cross_module_hash(uint relative_address, function_export_t export);
 
 void
-notify_code_modification(dcontext_t *dcontext, fragment_t *exception_f, app_pc resume_tag, app_pc target, uint size);
+notify_code_modification(dcontext_t *dcontext, dr_fragment_t *exception_f, app_pc resume_tag, app_pc target, uint size);
 
 void
 notify_dynamorio_interception(app_pc intercepted_function_pc, app_pc continuation_pc);
@@ -105,7 +105,7 @@ void
 notify_incoming_link(dcontext_t *dcontext, app_pc from, app_pc to);
 
 void
-notify_basic_block_linking_complete(dcontext_t *dcontext, fragment_t *f);
+notify_basic_block_linking_complete(dcontext_t *dcontext, dr_fragment_t *f);
 
 void
 notify_process_fork(dcontext_t *dcontext, wchar_t *child_process_name);
