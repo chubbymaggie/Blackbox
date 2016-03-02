@@ -301,6 +301,20 @@ DR_API
 bool
 dr_is_disp_audit_tls(opnd_t opnd, ushort offset);
 
+DR_API
+void
+dr_lock_modules();
+
+DR_API
+void
+dr_unlock_modules();
+
+DR_API
+IMAGE_EXPORT_DIRECTORY *
+dr_get_module_exports_directory(app_pc base_addr,
+                                OUT size_t *exports_size /* may be NULL */
+                                _IF_NOT_X64(bool ldr64));
+
 /****************************************************************************
  * CORE INTEGRATION
  */

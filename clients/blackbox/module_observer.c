@@ -1,7 +1,10 @@
-#include "link_observer.h"
 #include <string.h>
+
+#include "dr_api.h"
 #include "drsyms.h"
+
 #include "crowd_safe_util.h"
+#include "link_observer.h"
 #include "crowd_safe_trace.h"
 #include "basic_block_observer.h"
 #include "basic_block_hashtable.h"
@@ -215,8 +218,8 @@ typedef struct _xhash_module_t {
     bool write_xhash;
 } xhash_module_t;
 
-#define MODULE_LOCK dynamo_vm_areas_lock();
-#define MODULE_UNLOCK dynamo_vm_areas_unlock();
+#define MODULE_LOCK dr_lock_modules();
+#define MODULE_UNLOCK dr_unlock_modules();
 
 #define CHECK_SIGNATURE(sig) ((*sig == 'P') && (*(sig+1) == 'E') && \
     (*(sig+2) == 0) && (*(sig+3) == 0))
@@ -385,7 +388,9 @@ init_module_observer(bool is_fork) {
             dr_snprintf(syscall_export_name, 32, "syscall#%d", s);
             hash = string_hash(syscall_export_name);
             {
-                function_export_t export = { hash, syscall_export_name };
+                function_export_t export;
+                export.hash = hash;
+                export.function_id = syscall_export_name;
                 export_hashtable_add(export_hashes, s, export); /* no xhash report for these */
             }
         }
@@ -594,7 +599,6 @@ notify_module_unloaded(void *dcontext, const module_data_t *data) {
 
 module_location_t*
 get_module_for_address(app_pc address) {
-    extern vm_area_vector_t *landing_pad_areas;
     module_location_t *found = NULL;
 
     if (((address >= SYSCALL_SINGLETON_START) && (address <= SYSCALL_SINGLETON_END)) || (address == PROCESS_ENTRY_POINT))
@@ -652,9 +656,6 @@ void
 code_area_created(dcontext_t *dcontext, app_pc start, app_pc end) {
     module_location_t *existing;
 
-    if (!CROWD_SAFE_MODULE_LOG())
-        return;
-
     MODULE_LOCK;
     existing = module_vector_overlap_search(module_list, start, end);
     MODULE_UNLOCK;
@@ -676,9 +677,6 @@ code_area_created(dcontext_t *dcontext, app_pc start, app_pc end) {
 void
 code_area_expanded(app_pc original_start, app_pc original_end, app_pc new_start, app_pc new_end, bool is_dynamo_area) {
     module_location_t *module;
-
-    if (!CROWD_SAFE_MODULE_LOG())
-        return;
 
     if (!is_dynamo_area) {
         MODULE_LOCK
@@ -729,9 +727,6 @@ assign_black_box_singleton(module_location_t *module, bb_hash_t entry_hash) {
 
 void
 memory_released(dcontext_t *dcontext, app_pc start, app_pc end) {
-    if (!CROWD_SAFE_MODULE_LOG())
-        return;
-
     MODULE_LOCK {
     module_location_t *module = module_vector_overlap_search(module_list, start, end);
     MODULE_UNLOCK
@@ -810,7 +805,9 @@ observe_shadow_page_write(dcontext_t *dcontext, module_location_t *writing_modul
                           app_pc writer_tag, app_pc pc, size_t size)
 {
     module_location_t *written_module;
-    executable_write_t *previous_write, write = { pc, pc + size, 0 };
+    executable_write_t *previous_write, write = {0};
+    write.start = pc;
+    write.end = pc + size;
 
     written_module = get_module_for_address(pc);
     if (written_module->type == module_type_image)
@@ -830,7 +827,10 @@ observe_shadow_page_write(dcontext_t *dcontext, module_location_t *writing_modul
 
             previous_write->end = write.start; // N.B.: relocate the existing one before (potentially) adding a split
             if (previous_write->end > write.end) {
-                executable_write_t split = { write.end, previous_end, 0 };
+                executable_write_t split = {0};
+                split.start = write.end;
+                split.end = previous_end;
+
                 copy_appstack(&split, previous_write);
                 executable_write_list_insert(executable_write_list, split, split.start);
             }
@@ -853,7 +853,7 @@ write_gencode_edges(dcontext_t *dcontext, crowd_safe_thread_local_t *cstl, app_p
     shadow_page_t *page;
     bb_state_t *from_state;
     executable_write_t *write;
-    bb_hash_t to_entry_hash = NULL;
+    bb_hash_t to_entry_hash = 0ULL;
     bool is_black_box = to_module->black_box_singleton != NULL;
 
     MODULE_LOCK
@@ -1124,8 +1124,6 @@ add_shadow_page(dcontext_t *dcontext, app_pc base, bool safe_to_read) {
     uint f, frame_count = get_app_stacktrace(dcontext, MAX_APP_STACK_FRAMES, appstack);
 
     if (frame_count > 0) {
-        module_location_t *last_module = NULL;
-
         MODULE_LOCK
         page = shadow_page_table_search(shadow_page_table, base);
         MODULE_UNLOCK
@@ -1364,7 +1362,8 @@ load_relocations(module_location_t *location, const char *module_path) {
 
     while (relocation_table_index < relocation_table_end) {
         app_pc page_start = int2p(*(uint*)relocation_table_index);
-        relocation_table_page_t relocation_page = { page_start, NULL };
+        relocation_table_page_t relocation_page = {0};
+        relocation_page.page_base = page_start;
 
         if (page_start == NULL) {
             CS_ERR("REL: Failed to correctly read the length of a %s relocation table section. Terminating "PX" bytes before end.\n",
@@ -1432,7 +1431,7 @@ load_relocations(module_location_t *location, const char *module_path) {
                 absolute_operand_address = (ptr_uint_t *)(p2int(location->start_pc) + p2int(relocation_page.page_base) + (relocation & 0xfff));
                 operand = *absolute_operand_address;
                 relative_operand = operand - p2int(location->start_pc);
-                if (!safe_read((ptr_uint_t *)operand, sizeof(ptr_uint_t), &operand_target)) {
+                if (!dr_safe_read((ptr_uint_t *)operand, sizeof(ptr_uint_t), &operand_target, NULL)) {
                     CS_DET("Relocation: skipping "PX"<%s("PX")> because it is not readable.\n",
                            operand, location->module_name, relative_operand);
                     continue;
@@ -1442,10 +1441,11 @@ load_relocations(module_location_t *location, const char *module_path) {
                            operand, location->module_name, relative_operand);
                     continue;
                 }
-                if (!get_memory_info((app_pc) operand, NULL, NULL, &prot)) {
+                if (!dr_query_memory((app_pc) operand, NULL, NULL, &prot)) {
                     CS_WARN("Failed to query memory protection of operand target "PX"\n");
                     continue;
-                } else if (TEST(MEMPROT_WRITE, prot) || !TEST(MEMPROT_EXEC, prot)) {
+                } else if ((TEST(DR_MEMPROT_WRITE, prot) && !TEST(DR_MEMPROT_PRETEND_WRITE, prot)) ||
+                           !TEST(DR_MEMPROT_EXEC, prot)) {
                     CS_DET("Relocation: skipping "PX"<%s("PX")> because it is writable or not executable.\n",
                            operand, location->module_name, relative_operand);
                     continue;
@@ -1513,8 +1513,8 @@ initialize_module_exports(module_location_t *module, const char *module_path) {
     char *exported_name;
     bb_hash_t hash;
 
-    IMAGE_EXPORT_DIRECTORY *exports = get_module_exports_directory_common(
-        module->start_pc, &exports_size _IF_NOT_X64(NULL));
+    IMAGE_EXPORT_DIRECTORY *exports = dr_get_module_exports_directory(
+        module->start_pc, &exports_size _IF_NOT_X64(false));
 
     CS_LOG("initialize exports for %s\n", module->module_name);
 
@@ -1545,7 +1545,9 @@ initialize_module_exports(module_location_t *module, const char *module_path) {
         strcat(function_id, "!main"); // valid for the main entry point of any program
         hash = string_hash(function_id);
         hashcode_lock_acquire(); {
-            function_export_t export = { hash, cs_strcpy(function_id) };
+            function_export_t export;
+            export.hash = hash;
+            export.function_id = cs_strcpy(function_id);
             export_hashtable_add(export_hashes, main->entry_point, export);
         }
         hashcode_lock_release();
@@ -1571,7 +1573,9 @@ initialize_module_exports(module_location_t *module, const char *module_path) {
             strncat(function_id, exported_name, 154); // "<to-module>!<function-name>"
             hash = string_hash(function_id);
             {
-                function_export_t export = { hash, cs_strcpy(function_id) };
+                function_export_t export;
+                export.hash = hash;
+                export.function_id = cs_strcpy(function_id);
                 add_export_hash(exported_address, relative_address, export, xhash_module.write_xhash);
             }
         }
@@ -1598,7 +1602,9 @@ initialize_module_exports(module_location_t *module, const char *module_path) {
                 dr_snprintf(function_id + function_id_base_length, 8, "(%d)", exported_ordinal);
                 hash = string_hash(function_id);
                 {
-                    function_export_t export = { hash, cs_strcpy(function_id) };
+                    function_export_t export;
+                    export.hash = hash;
+                    export.function_id = cs_strcpy(function_id);
                     add_export_hash(exported_address, relative_address, export, xhash_module.write_xhash);
                 }
 
@@ -1608,16 +1614,18 @@ initialize_module_exports(module_location_t *module, const char *module_path) {
         hashcode_lock_release();
     }
 
-    if (CROWD_SAFE_RECORD_XHASH() && module->type == module_type_image && drsym_module_has_symbols(module_path))
-        drsym_enumerate_symbols_ex(module_path, symbol_iteration_callback, sizeof(drsym_info_t),
-                                   &xhash_module, DRSYM_DEMANGLE_PDB_TEMPLATES);
+    if (CROWD_SAFE_RECORD_XHASH() && module->type == module_type_image &&
+        drsym_module_has_symbols(module_path)) {
+        drsym_enumerate_symbols_ex(module_path, symbol_iteration_callback,
+                                   sizeof(drsym_info_t), &xhash_module, DRSYM_PDB);
+    }
 }
 
 static void
 clear_module_exports(module_location_t *module) {
     size_t exports_size;
-    IMAGE_EXPORT_DIRECTORY *exports = get_module_exports_directory_common(
-        module->start_pc, &exports_size _IF_NOT_X64(NULL));
+    IMAGE_EXPORT_DIRECTORY *exports = dr_get_module_exports_directory(
+        module->start_pc, &exports_size _IF_NOT_X64(false));
 
     assert_hashcode_lock();
 

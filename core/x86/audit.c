@@ -378,6 +378,7 @@ dr_log_last_exit(dcontext_t *dcontext, app_pc tag, const char *prefix, uint logl
     }
 }
 
+// cs-todo: put these back in the client
 DR_API
 void
 dr_instrument_call_site(dcontext_t *dcontext, instrlist_t *ilist, instr_t *call_instr) {
@@ -520,6 +521,29 @@ bool
 dr_is_disp_audit_tls(opnd_t opnd, ushort offset)
 {
     return opnd_get_disp(opnd) == os_tls_offset(offset);
+}
+
+DR_API
+void
+dr_lock_modules()
+{
+    dynamo_vm_areas_lock();
+}
+
+DR_API
+void
+dr_unlock_modules()
+{
+    dynamo_vm_areas_unlock();
+}
+
+DR_API
+IMAGE_EXPORT_DIRECTORY *
+dr_get_module_exports_directory(app_pc base_addr,
+                                OUT size_t *exports_size /* may be NULL */
+                                _IF_NOT_X64(bool ldr64))
+{
+    return get_module_exports_directory_common(base_addr, exports_size, ldr64);
 }
 
 /**** need this???
