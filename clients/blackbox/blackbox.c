@@ -53,7 +53,7 @@ audit_fragment_indirect_link(dcontext_t *dcontext)
 static void
 audit_fragment_direct_link(dcontext_t *dcontext, app_pc from, app_pc to, byte ordinal)
 {
-    if (ordinal == 0xff)
+    if (ordinal == UNKNOWN_ORDINAL)
         notify_incoming_link(dcontext, from, to);
     else
         notify_linking_fragments(dcontext, from, to, ordinal);
@@ -405,6 +405,7 @@ static audit_callbacks_t callbacks = {
 #define MAX_MONITOR_DATASET_DIR_LEN 256
 
 uint crowd_safe_options;
+uint bb_analysis_level;
 char monitor_dataset_dir[MAX_MONITOR_DATASET_DIR_LEN] = {0};
 
 static inline bool
@@ -413,6 +414,19 @@ has_option(const char *option)
     uint64 option_value;
 
     return dr_get_integer_option(option, &option_value);
+}
+
+static inline bool
+get_uint_option(const char *option, uint *value)
+{
+    uint64 option_value;
+
+    if (dr_get_integer_option(option, &option_value)) {
+        *value = (uint) option_value;
+        return true;
+    } else {
+        return false;
+    }
 }
 
 DR_EXPORT void
@@ -449,6 +463,8 @@ dr_init(client_id_t id)
         crowd_safe_options |= CROWD_SAFE_META_ON_CLOCK_OPTION;
     if (has_option("wdb_script"))
         crowd_safe_options |= CROWD_SAFE_DEBUG_SCRIPT_OPTION;
+    if (get_uint_option("analysis", &bb_analysis_level))
+        crowd_safe_options |= CROWD_SAFE_BB_ANALYSIS_OPTION;
 
     /*
     OPTION_DEFAULT(uint, bb_analysis_level, 0U,

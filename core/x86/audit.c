@@ -222,6 +222,13 @@ dr_get_building_trace_tail(dcontext_t *dcontext, bool *is_return, app_pc *trace_
 }
 
 DR_API
+bool
+dr_is_part_of_interception(app_pc tag)
+{
+    return is_part_of_interception(tag);
+}
+
+DR_API
 byte
 dr_fragment_find_direct_ordinal(fragment_t *from, app_pc to) {
     linkstub_t *l;
@@ -239,6 +246,17 @@ dr_fragment_find_direct_ordinal(fragment_t *from, app_pc to) {
     SEC_LOG(4, "Could not find the correct exit ordinal for direct link from tag "PX"\n",
             from->tag);
     return 0xFF;
+}
+
+DR_API
+byte
+dr_fragment_lookup_direct_ordinal(dcontext_t *dcontext, app_pc from, app_pc to)
+{
+    fragment_t *from_f = fragment_lookup(dcontext, from);
+    if (from_f == NULL)
+        return UNKNOWN_ORDINAL;
+    else
+        return dr_fragment_find_direct_ordinal(from_f, to);
 }
 
 DR_API

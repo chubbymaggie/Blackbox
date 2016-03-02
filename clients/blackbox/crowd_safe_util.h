@@ -134,12 +134,14 @@ typedef uint clock_type_t;
 #define CROWD_SAFE_META_ON_CLOCK_OPTION 8
 #define CROWD_SAFE_RECORD_XHASH_OPTION 0x10
 #define CROWD_SAFE_DEBUG_SCRIPT_OPTION 0x20
+#define CROWD_SAFE_BB_ANALYSIS_OPTION 0x40
 #define CROWD_SAFE_MONITOR() is_crowd_safe_option_active(CROWD_SAFE_MONITOR_OPTION)
 #define CROWD_SAFE_ALARM() is_crowd_safe_option_active(CROWD_SAFE_ALARM_OPTION)
 #define CROWD_SAFE_NETWORK_MONITOR() is_crowd_safe_option_active(CROWD_SAFE_NETWORK_MONITOR_OPTION)
 #define CROWD_SAFE_META_ON_CLOCK() is_crowd_safe_option_active(CROWD_SAFE_META_ON_CLOCK_OPTION)
 #define CROWD_SAFE_RECORD_XHASH() is_crowd_safe_option_active(CROWD_SAFE_RECORD_XHASH_OPTION)
 #define CROWD_SAFE_DEBUG_SCRIPT() is_crowd_safe_option_active(CROWD_SAFE_DEBUG_SCRIPT_OPTION)
+#define CROWD_SAFE_BB_ANALYSIS() is_crowd_safe_option_active(CROWD_SAFE_BB_ANALYSIS_OPTION)
 
 // CS-TODO: verify correctness of big/little endianness
 #ifndef __BYTE_ORDER

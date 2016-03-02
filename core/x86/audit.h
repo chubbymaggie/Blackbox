@@ -62,7 +62,6 @@ typedef uint64 bb_tag_pairing_t;
 #include "dr_config.h"
 
 typedef void dcontext_t;
-//typedef byte * cache_pc;
 
 typedef struct _dr_fragment_t {
     app_pc    tag;
@@ -97,6 +96,8 @@ typedef fragment_t dr_fragment_t; /* not API exported */
 #define IS_CALLBACK_FRAME(sas) \
     ((SHADOW_FRAME(sas)->base_pointer == (app_pc)SHADOW_STACK_SENTINEL) && \
      (SHADOW_FRAME(sas)->return_address == (app_pc)SHADOW_STACK_CALLBACK_TAG))
+
+#define UNKNOWN_ORDINAL 0xff
 
 /****************************************************************************
  * SECURITY AUDITING SUPPORT
@@ -212,8 +213,16 @@ app_pc
 dr_get_building_trace_tail(dcontext_t *dcontext, bool *is_return, app_pc *trace_tag);
 
 DR_API
+bool
+dr_is_part_of_interception(app_pc tag);
+
+DR_API
 byte
 dr_fragment_find_direct_ordinal(dr_fragment_t *from, app_pc to);
+
+DR_API
+byte
+dr_fragment_lookup_direct_ordinal(dcontext_t *dcontext, app_pc from, app_pc to);
 
 DR_API
 byte

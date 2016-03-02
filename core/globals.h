@@ -154,8 +154,12 @@
 
 #ifdef WINDOWS
 #include <windows.h>
+/* DR_API EXPORT TOFILE dr_defines.h */
+/* DR_API EXPORT BEGIN */
 typedef unsigned long ulong;
 typedef unsigned short ushort;
+/* DR_API EXPORT END */
+
 /* We can't put this in globals_shared.h b/c it needs windows.h and
  * not all users of globals_shared.h want that included, so we
  * duplicate it here (we do have Linux file_t stuff in globals_shared.h)

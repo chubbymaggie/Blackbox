@@ -155,11 +155,7 @@ init_crowd_safe_trace(bool isFork) {
     output_files_closed = CS_ALLOC(sizeof(bool));
     *output_files_closed = false;
 
-    activate_trace_file(module_file, CROWD_SAFE_MODULE_LOG(), false, 0U, "module", "log");
-    activate_trace_file(block_hash_file, CROWD_SAFE_BLOCK_HASH(), true,
-                        GRAPH_BUFFER_LONG_COUNT, "block-hash", "dat");
-    activate_trace_file(pair_hash_file, CROWD_SAFE_PAIR_HASH(), true,
-                        GRAPH_BUFFER_LONG_COUNT, "pair-hash", "dat");
+    activate_trace_file(module_file, true, false, 0U, "module", "log");
     activate_trace_file(graph_node_file, true, true,
                         GRAPH_BUFFER_LONG_COUNT, "graph-node", "dat");
     activate_trace_file(graph_edge_file, true, true,
@@ -191,42 +187,11 @@ void
 write_link(dcontext_t *dcontext, app_pc from, app_pc to, bb_state_t *from_state, bb_state_t *to_state,
     module_location_t *from_module, module_location_t *to_module, byte exit_ordinal, graph_edge_type edge_type)
 {
-    bb_hash_t from_hash, hash;
-#ifdef SEED_TLS_FOR_IBL_VERIFICATION
-    bb_hash_t temp_from_hash;
-#endif
-
     assert_hashcode_lock();
     ASSERT(from_state != NULL);
     ASSERT(to_state != NULL);
 
     write_graph_edge(dcontext, from, to, from_state, to_state, from_module, to_module, exit_ordinal, edge_type);
-
-    if (CROWD_SAFE_PAIR_HASH()) { // cs-todo: translate a split 'from' to its exception block?
-#ifdef SEED_TLS_FOR_IBL_VERIFICATION
-        temp_from_hash = (bb_hash_t)0x100;
-        from_hash = temp_from_hash;
-#else
-        from_hash = from_state->hash;
-#endif
-
-        // CS-TODO: only hash the `from` instructions up to the exit ordinal
-
-        hash = (from_hash << 1) ^ to_state->hash;
-        if (CROWD_SAFE_PAIR_HASH()) {
-            output_lock_acquire();
-            write_hash(hash, pair_hash_file);
-            trace_files[pair_hash_file].entry_count++;
-            output_lock_release();
-        }
-
-        /* cs-todo
-        if (is_bb_analysis_level_active(BB_ANALYSIS_ASSEMBLY) && CROWD_SAFE_PAIR_HASH()) {
-            dr_fprintf(trace_files[disassembly_file].file,
-                ">>>> Pair Hash 0x%llx ---- from "PX" to "PX" <<<<\n", hash, from, to);
-        }
-        */
-    }
 }
 
 void
@@ -269,13 +234,13 @@ write_call_stack(stack_frame_t *frames, uint frame_count) {
     output_lock_acquire();
 
     for (i = 0; i < (frame_count - 1); i += 2) {
-        entry = p2int(frames[i | 1]->return_address);
-        entry |= (((uint64) frames[i]->return_address) << 0x20);
+        entry = p2int(frames[i | 1].return_address);
+        entry |= (((uint64) frames[i].return_address) << 0x20);
         write_byte_aligned_file_entry(call_stack_file, entry);
     }
 
     if ((frame_count & 1) == 0)
-        entry = (((uint64) frames[frame_count - 1]->return_address) << 0x20);
+        entry = (((uint64) frames[frame_count - 1].return_address) << 0x20);
     else
         entry = 0ULL;
     write_byte_aligned_file_entry(call_stack_file, entry);
@@ -618,9 +583,6 @@ notify_incoming_link(dcontext_t *dcontext, app_pc from, app_pc to) {
     bb_state_t *from_state, *state = GET_BB_STATE(cstl);
     module_location_t *module, *from_module;
     app_pc committed_edge_target = NULL;
-    byte exit_ordinal;
-    dr_fragment_t *from_f;
-
 
     ASSERT(GET_BUILDING_TAG(cstl) == to);
 
@@ -647,13 +609,12 @@ notify_incoming_link(dcontext_t *dcontext, app_pc from, app_pc to) {
         CS_DET("Make BB ("PX"-v%d 0x%llx) a black box node on the basis of late edge from "PX"\n",
             to, state->tag_version, state->hash, from);
     } else {
-        from_f = fragment_lookup(dcontext, from);
-        if (from_f == NULL) {
+        byte exit_ordinal = dr_fragment_lookup_direct_ordinal(dcontext, from, to);
+        if (exit_ordinal == UNKNOWN_ORDINAL) {
             CS_ERR("Failed to link incoming edge "PX" - "PX" because the 'from' fragment is null, preventing ordinal lookup.\n",
                 from, to);
             return;
         }
-        exit_ordinal = dr_fragment_find_direct_ordinal(from_f, to);
 
         CS_DET("Writing late edge "PX" - "PX" while building bb "PX"\n", from, to, GET_BUILDING_TAG(cstl));
 
@@ -695,8 +656,8 @@ notify_basic_block_linking_complete(dcontext_t *dcontext, app_pc tag) {
         } else {
             bool is_return;
             app_pc trace_tag;
-            app_pc from_tag = dr_get_bulding_trace_tail(dcontext, &is_return,
-                                                        &trace_tag);
+            app_pc from_tag = dr_get_building_trace_tail(dcontext, &is_return,
+                                                         &trace_tag);
             if (from_tag != NULL) {
                 CS_LOG("Patching trace "PX" tail "PX" into private bb "PX"\n",
                        trace_tag, from_tag, tag);
@@ -707,9 +668,6 @@ notify_basic_block_linking_complete(dcontext_t *dcontext, app_pc tag) {
                                  is_return ? unexpected_return_edge : indirect_edge);
                 hashcode_lock_release();
             } else {
-                /* write in each log separately, to show sequence */
-                LOG(THREAD, LOG_LINKS, 1, "No links for new bb "PX"!\n", tag);
-                LOG(GLOBAL, LOG_TOP, 1, "No links for new bb "PX"!\n", tag);
                 CS_LOG("No links for new bb ("PX"-v%d 0x%llx) on thread 0x%x! %s"
                        "Clobbered black box hash 0x%llx\n", tag, state->tag_version,
                        state->hash, current_thread_id(), GET_CLOBBERED_BLACK_BOX_HASH(cstl));
@@ -743,8 +701,14 @@ confine_to_black_box(module_location_t *anonymous_module, // module_location_t *
                      bb_hash_t entry_hash, bb_hash_t exit_hash, char *basis, app_pc from)
 {
     if (assign_black_box_singleton(anonymous_module, entry_hash)) {
-        bb_state_t singleton_state = { 0, BB_STATE_LIVE | BB_STATE_COMMITTED | BB_STATE_SINGLETON | BB_STATE_BLACK_BOX,
-            entry_hash, graph_meta_singleton, 0 };
+        bb_state_t singleton_state;
+        singleton_state.image_instance_id = 0;
+        singleton_state.flags = BB_STATE_LIVE | BB_STATE_COMMITTED | BB_STATE_SINGLETON | BB_STATE_BLACK_BOX;
+        singleton_state.hash = entry_hash;
+        singleton_state.meta_type = graph_meta_singleton;
+        singleton_state.tag_version = 0;
+        singleton_state.size = 0;
+
         anonymous_module->black_box_singleton_state = insert_bb_state(anonymous_module->black_box_singleton, singleton_state);
 
         write_committed_basic_block(anonymous_module->black_box_singleton, anonymous_module->black_box_singleton_state);
@@ -802,41 +766,40 @@ write_instruction_trace(instruction_trace_t *trace) {
 
 bool
 is_bb_analysis_level_active(uint level) {
+    extern uint bb_analysis_level;
     CROWD_SAFE_DEBUG_HOOK(__FUNCTION__, false);
 
-    return level <= DYNAMO_OPTION(bb_analysis_level);
+    return level <= bb_analysis_level;
 }
 
 void
 crowd_safe_heartbeat(dcontext_t *dcontext) {
-    if (CROWD_SAFE_MODULE_LOG()) {
-        clock_type_t now = quick_system_time_millis();
-        bool flush_now = false;
-        trace_file_t *file;
-        trace_file_id id;
+    clock_type_t now = quick_system_time_millis();
+    bool flush_now = false;
+    trace_file_t *file;
+    trace_file_id id;
 
 #ifdef MONITOR_UNEXPECTED_IBP
-        write_stale_uibp_reports(dcontext, now);
+    write_stale_uibp_reports(dcontext, now);
 #endif
 
-        for (id = 0; id < _trace_file_id_count; id++) {
-            file = &trace_files[id]; // note: allowing an unsafe read here
-            if (file->active && file->buffered && ((now - file->last_buffer_flush) > BUFFER_FLUSH_INTERVAL)) {
-                flush_now = true;
-                break;
-            }
+    for (id = 0; id < _trace_file_id_count; id++) {
+        file = &trace_files[id]; // note: allowing an unsafe read here
+        if (file->active && file->buffered && ((now - file->last_buffer_flush) > BUFFER_FLUSH_INTERVAL)) {
+            flush_now = true;
+            break;
         }
+    }
 
-        if (flush_now) {
-            CS_LOG("Flush buffers at 0x%x\n", now);
-            output_lock_acquire();
-            for (id = 0; id < _trace_file_id_count; id++) {
-                file = &trace_files[id];
-                if (file->active && file->buffered)
-                    flush_trace_buffer(file);
-            }
-            output_lock_release();
+    if (flush_now) {
+        CS_LOG("Flush buffers at 0x%x\n", now);
+        output_lock_acquire();
+        for (id = 0; id < _trace_file_id_count; id++) {
+            file = &trace_files[id];
+            if (file->active && file->buffered)
+                flush_trace_buffer(file);
         }
+        output_lock_release();
     }
 }
 
@@ -915,7 +878,7 @@ write_graph_edge(dcontext_t *dcontext, app_pc from, app_pc to, bb_state_t *from_
         ASSERT((from_state != NULL) || (to_state != NULL));
         skip_edge = true;
     } else if (from_module->type == module_type_dynamo ||
-               is_part_of_interception(from) || is_part_of_interception(to)) {
+               dr_is_part_of_interception(from) || dr_is_part_of_interception(to)) {
         CS_DET("Dynamo edge filtered out: "PX" --%d|%d--> "PX"\n", from, exit_ordinal, edge_type, to);
 
         SET_BB_DYNAMO(to_state);
@@ -1010,6 +973,10 @@ write_graph_edge(dcontext_t *dcontext, app_pc from, app_pc to, bb_state_t *from_
     if (!write_edge) {
         SET_BB_LINKED(to_state);
     } else {
+        bool committed_bb = false;
+        uint64 compoundFromTag = p2int(from);
+        uint64 compoundToTag = p2int(to);
+
         DODEBUG({
             CS_DET("Intra-module edge %s from "PX" to "PX"\n", from_module->module_name,
                 MODULAR_PC(from_module, from), MODULAR_PC(to_module, to));
@@ -1036,10 +1003,6 @@ write_graph_edge(dcontext_t *dcontext, app_pc from, app_pc to, bb_state_t *from_
                    edge_type, to, to_state->flags,
                    IS_BB_BLACK_BOX(to_state) ? 'T' : 'F');
         }
-
-        bool committed_bb = false;
-        uint64 compoundFromTag = p2int(from);
-        uint64 compoundToTag = p2int(to);
 
         if (!IS_BB_COMMITTED(from_state)) {
             CS_DET("Writing 'from' node of edge "PX" - "PX"\n", from, to);
@@ -1109,7 +1072,9 @@ write_cross_module_edge(dcontext_t *dcontext, crowd_safe_thread_local_t *cstl, a
         edge_hash = string_hash(entry_symbol);
 
         if (CROWD_SAFE_RECORD_XHASH() && register_xhash(entry_id)) {
-            function_export_t call_to_dgc = { edge_hash, entry_id };
+            function_export_t call_to_dgc;
+            call_to_dgc.hash = edge_hash;
+            call_to_dgc.function_id = entry_id;
             write_cross_module_hash(caller_offset, call_to_dgc);
         }
     }
@@ -1141,7 +1106,9 @@ write_cross_module_edge(dcontext_t *dcontext, crowd_safe_thread_local_t *cstl, a
         edge_hash = string_hash(function_id);
 
         if (to_module->type == module_type_image) {
-            function_export_t internal_export = { edge_hash, cs_strcpy(function_id) };
+            function_export_t internal_export;
+            internal_export.hash = edge_hash;
+            internal_export.function_id = cs_strcpy(function_id);
             add_export_hash(to, to - to_module->start_pc, internal_export, CROWD_SAFE_RECORD_XHASH());
         }
     }
@@ -1288,6 +1255,10 @@ write_cross_module_edge(dcontext_t *dcontext, crowd_safe_thread_local_t *cstl, a
     if (!write_edge) {
         SET_BB_LINKED(to_state);
     } else {
+        bool committed_bb = false;
+        uint64 compoundFromTag = p2int(from);
+        uint64 compoundToTag = p2int(to);
+
         DODEBUG({
             CS_DET("Cross-module edge %s from %s("PX") to %s("PX")\n", function_id, from_module->module_name,
                 MODULAR_PC(from_module, from), to_module->module_name, MODULAR_PC(to_module, to));
@@ -1312,10 +1283,6 @@ write_cross_module_edge(dcontext_t *dcontext, crowd_safe_thread_local_t *cstl, a
                    IS_BLACK_BOX(from_module) ? from_module->black_box_singleton : to_module->black_box_singleton,
                    from_module->start_pc, to_module->start_pc);
         }
-
-        bool committed_bb = false;
-        uint64 compoundFromTag = p2int(from);
-        uint64 compoundToTag = p2int(to);
 
         if (!IS_BB_COMMITTED(from_state)) {
             CS_DET("Writing 'from' node of edge "PX" - "PX"\n", from, to);
@@ -1575,7 +1542,7 @@ find_in_exports(IMAGE_EXPORT_DIRECTORY *exports, size_t exports_size, app_pc fro
         ulong exported = ((ulong)to_module->start_pc + functions[i]);
         uint ordinal = i+1;
         if ((exported > p2int(exports)) && (exported < (p2int(exports) + exports_size))) {
-            char *exported_name = (char *)int2p(exported);
+            IF_DET( char *exported_name = (char *)int2p(exported); );
             // it's a redirect, what does it match?
 
             CS_DET("Found export redirect to %s in the noname section.\n", exported_name);
@@ -1694,8 +1661,6 @@ get_black_box_callout_ordinal(graph_edge_type edge_type) {
         default:
             return default_edge_ordinal(edge_type); /* very strange */
     }
-    ASSERT(false);
-    return 0;
 }
 
 static inline incoming_edge_t*
