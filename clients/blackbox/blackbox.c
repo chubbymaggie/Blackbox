@@ -433,15 +433,26 @@ get_uint_option(const char *option, uint *value)
 DR_EXPORT void
 dr_init(client_id_t id)
 {
+    const char *options = dr_get_options(id);
+
     drsym_init(0);
+
+    dr_printf("options: %s\n", options);
 
     process_start_time = dr_get_milliseconds();
 
     dr_register_exit_event(event_exit);
     dr_register_audit_callbacks(&callbacks);
 
+    if (options != NULL && strstr("-dataset_home", options) == 0) {
+        options += strlen("-dataset_home ");
+        strcpy(monitor_dataset_dir, options);
+    }
+
+    /*
     dr_get_string_option("dataset_home",
                          monitor_dataset_dir, MAX_MONITOR_DATASET_DIR_LEN);
+    */
 
     if (has_option("monitor"))
         crowd_safe_options |= CROWD_SAFE_MONITOR_OPTION;

@@ -494,10 +494,6 @@ dynamorio_app_init(void)
         heap_init();
         dynamo_heap_initialized = true;
 
-#ifdef SECURITY_AUDIT
-        audit_client_init(GLOBAL_DCONTEXT, false);
-#endif
-
         /* The process start event should be done after os_init() but before
          * process_control_int() because the former initializes event logging
          * and the latter can kill the process if a violation occurs.
@@ -556,6 +552,12 @@ dynamorio_app_init(void)
          * wants it later.
          */
         loader_init();
+#ifdef CLIENT_INTERFACE
+        instrument_init();
+#endif
+#ifdef SECURITY_AUDIT
+        audit_client_init(GLOBAL_DCONTEXT, false);
+#endif
         arch_init();
         synch_init();
 
@@ -663,7 +665,7 @@ dynamorio_app_init(void)
          *       report; better document that client libraries shouldn't have
          *       DllMain.
          */
-        instrument_init();
+        //instrument_init();
         /* To give clients a chance to process pcaches as we load them, we
          * delay the loading until we've initialized the clients.
          */

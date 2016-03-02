@@ -451,9 +451,9 @@ add_client_lib(char *path, char *id_str, char *options)
         /* PR 250952: version check */
         int *uses_dr_version = (int *)
             lookup_library_routine(client_lib, USES_DR_VERSION_NAME);
-        if (uses_dr_version == NULL ||
+        if (false /* cs-todo */ && (uses_dr_version == NULL ||
             *uses_dr_version < OLDEST_COMPATIBLE_VERSION ||
-            *uses_dr_version > NEWEST_COMPATIBLE_VERSION) {
+            *uses_dr_version > NEWEST_COMPATIBLE_VERSION)) {
             /* not a fatal usage error since we want release build to continue */
             CLIENT_ASSERT(false,
                           "client library is incompatible with this version of DR");
