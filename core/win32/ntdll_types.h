@@ -445,8 +445,6 @@ typedef enum _IoControlCode {
     AFD_ICMP = 0x120013
 } IoControlCode;
 
-/* DR_API EXPORT END */
-
 typedef struct _AFD_WSABUF {
     UINT len;
     PCHAR buf;
@@ -458,6 +456,8 @@ typedef struct _AFD_RECV_INFO {
     ULONG AfdFlags;
     ULONG TdiFlags;
 } AFD_RECV_INFO , *PAFD_RECV_INFO;
+
+/* DR_API EXPORT END */
 
 /* we don't actually use this but for cleanliness sake, is from ntddk.h */
 typedef

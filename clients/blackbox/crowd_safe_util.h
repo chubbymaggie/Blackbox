@@ -286,9 +286,11 @@ do { \
     dr_fprintf(cs_log_file, "Error: "__VA_ARGS__); \
 } while(0)
 # define CS_NOLOCK_ERR(...) dr_fprintf(cs_log_file, "Error: "__VA_ARGS__)
+# define IF_ERR(x) x
 #else
 # define CS_ERR(...)
 # define CS_NOLOCK_ERR(...)
+# define IF_ERR(x)
 #endif
 
     //log_lock_acquire();
@@ -298,8 +300,10 @@ do { \
 do { \
     dr_fprintf(cs_log_file, "Warning: "__VA_ARGS__); \
 } while(0)
+# define IF_WARN(x) x
 #else
 # define CS_WARN(...)
+# define IF_WARN(x)
 #endif
 
     //log_lock_acquire();
@@ -316,17 +320,21 @@ do { \
 } while(0)
 # define CS_NOLOCK_LOG(...) dr_fprintf(cs_log_file, __VA_ARGS__)
 # define CS_STACKTRACE() dump_dr_callstack(cs_log_file)
+# define IF_LOG(x) x
 #else
 # define CS_LOG(...)
 # define CS_LOCKED_LOG(...)
 # define CS_NOLOCK_LOG(...)
 # define CS_STACKTRACE()
+# define IF_LOG(x)
 #endif
 
 #if (CROWD_SAFE_LOG_LEVEL >= CS_LOG_DETAILS)
 # define CS_DET(...) dr_fprintf(cs_log_file, __VA_ARGS__)
+# define IF_DET(x) x
 #else
 # define CS_DET(...)
+# define IF_DET(x)
 #endif
 
 #define CROWD_SAFE_DATA 1
