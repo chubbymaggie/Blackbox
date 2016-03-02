@@ -7,8 +7,11 @@
 //#include "../../core/x86/instrument.h"
 #include "../common/utils.h"
 
-#undef ASSERT
+#ifdef ASSERT
+# undef ASSERT
+#endif
 #define ASSERT(condition) DR_ASSERT_MSG(condition, ##condition)
+#define ASSERT_NOT_REACHED() ASSERT(false)
 
 #include "drhashtable.h"
 #include "drvector.h"
@@ -256,10 +259,11 @@ typedef uint clock_type_t;
 #define SET_BLACK_BOX_THRASH(cstl) (cstl->bb_meta.is_black_box_thrash = true)
 #define SET_EXCEPTION_RESUMING(cstl) (cstl->bb_meta.is_exception_resuming = true)
 
-#define GET_CSTL(dcontext) (dcontext_get_audit_state(dcontext)->security_audit_thread_local)
+#define GET_CSTL(dcontext) \
+    ((crowd_safe_thread_local_t *) &(dcontext_get_audit_state(dcontext)->security_audit_thread_local))
 #define SET_CSTL(dcontext, cstl) \
 do { \
-    GET_CSTL(dcontext) = cstl; \
+    dcontext_get_audit_state(dcontext)->security_audit_thread_local = cstl; \
 } while (0);
 
 #define GET_SHADOW_STACK_BASE(sas) \

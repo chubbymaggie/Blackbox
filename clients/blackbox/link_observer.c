@@ -44,7 +44,6 @@ init_link_observer(dcontext_t *dcontext, bool is_fork) {
     init_crowd_safe_util(is_fork);
 
     if (is_fork) {
-        init_crowd_safe_log(true);
         *initialized_thread_count = 1;
     } else {
         init_bb_hashtable();
@@ -53,10 +52,9 @@ init_link_observer(dcontext_t *dcontext, bool is_fork) {
         *initialized_thread_count = 0;
     }
 
-    if (CROWD_SAFE_MODULE_LOG()) {
-        init_crowd_safe_trace(is_fork);
-        init_module_observer(is_fork);
-    }
+    init_crowd_safe_trace(is_fork);
+    init_module_observer(is_fork);
+
     if (CROWD_SAFE_NETWORK_MONITOR())
         init_network_monitor();
 
@@ -79,14 +77,16 @@ notify_dynamo_model_initialized() {
 
 void
 link_observer_thread_init(dcontext_t *dcontext) {
+    uint i;
     crowd_safe_thread_local_t *cstl;
+    clock_type_t now = quick_system_time_millis();
     CROWD_SAFE_DEBUG_HOOK_VOID(__FUNCTION__);
 
     (*initialized_thread_count)++;
     CS_DET("Call #%d to %s:%s for dcontext "PX" on thread %d\n",
-        *initialized_thread_count, __FILE__, __FUNCTION__, p2int(dcontext), current_thread_id());
+           *initialized_thread_count, __FILE__, __FUNCTION__,
+           p2int(dcontext), current_thread_id());
 
-    clock_type_t now = quick_system_time_millis();
     cstl = (crowd_safe_thread_local_t *)CS_ALLOC(sizeof(crowd_safe_thread_local_t));
 #ifdef MONITOR_ENTRY_RATE
     cstl->thread_init_tsc = now;
@@ -108,22 +108,19 @@ link_observer_thread_init(dcontext_t *dcontext) {
     init_report_mask(&cstl->thread_uibp.report_mask, 0xfff, 0xffffffff);
 #endif
 #ifdef MONITOR_UNEXPECTED_IBP
-    {
-        uint i;
-        cstl->thread_clock.last_fcache_entry = 0ULL;
-        cstl->thread_clock.clock = 0ULL;
-        cstl->thread_clock.is_in_app_fcache = false;
-        cstl->thread_clock.last_uibp_timestamp = now;
-        cstl->thread_clock.last_suibp_timestamp = now;
-        cstl->thread_clock.last_uibp_is_admitted = false;
-        for (i = 0; i < UIBP_INTERVAL_COUNT; i++) {
-            cstl->thread_clock.consecutive_interval_count[i] = 0;
-            cstl->thread_clock.consecutive_admitted_interval_count[i] = 0;
-            cstl->thread_clock.consecutive_suspicious_interval_count[i] = 0;
-        }
-        cstl->stack_suspicion.uib_count = 0;
-        cstl->stack_suspicion.suib_count = 0;
+    cstl->thread_clock.last_fcache_entry = 0ULL;
+    cstl->thread_clock.clock = 0ULL;
+    cstl->thread_clock.is_in_app_fcache = false;
+    cstl->thread_clock.last_uibp_timestamp = now;
+    cstl->thread_clock.last_suibp_timestamp = now;
+    cstl->thread_clock.last_uibp_is_admitted = false;
+    for (i = 0; i < UIBP_INTERVAL_COUNT; i++) {
+        cstl->thread_clock.consecutive_interval_count[i] = 0;
+        cstl->thread_clock.consecutive_admitted_interval_count[i] = 0;
+        cstl->thread_clock.consecutive_suspicious_interval_count[i] = 0;
     }
+    cstl->stack_suspicion.uib_count = 0;
+    cstl->stack_suspicion.suib_count = 0;
 #endif
     cstl->stack_walk = CS_ALLOC(sizeof(return_address_iterator_t));
     CS_TRACK(cstl->stack_walk, sizeof(return_address_iterator_t));
@@ -179,6 +176,7 @@ crowd_safe_dispatch(dcontext_t *dcontext) {
 
         IBP_SET_META(ibp_data, &, ~IBP_META_NEW_PATH); // ack the new IBP
 
+        /*
         if (ibp_data->ibp_to_tag == NULL) { // app is doing something bogus
             CS_LOG("Bogus indirect branch from "PX" to 0x0!\n", ibp_data->ibp_from_tag);
             fcache_enter = get_fcache_enter_shared_routine(dcontext);
@@ -190,6 +188,7 @@ crowd_safe_dispatch(dcontext_t *dcontext) {
             (*fcache_enter)(dcontext);
             ASSERT_NOT_REACHED();
         }
+        */
 
         // dr_printf("Dispatch from fcache for IBP from 0x%lx to 0x%lx\n",
         // ibp_data->ibp_from_tag, ibp_data->ibp_to_tag);
@@ -199,7 +198,7 @@ crowd_safe_dispatch(dcontext_t *dcontext) {
         // expected returns must be filtered out in the IBL routine
         ASSERT(!(IBP_IS_RETURN(ibp_data) && !IBP_IS_UNEXPECTED_RETURN(ibp_data)));
 
-        indirect_link_hashtable_insert(dcontext, false);
+        indirect_link_hashtable_insert(dcontext);
 
 #ifdef MONITOR_UNEXPECTED_IBP
         start_fcache_clock(dcontext, false);
@@ -213,7 +212,7 @@ crowd_safe_dispatch(dcontext_t *dcontext) {
             bool matched_address = false;
             bool context_switch = false;
             uint unwind_count = 0;
-            app_pc xsp = dcontext_get_stack_pointer(dcontext);
+            app_pc xsp = dcontext_get_app_stack_pointer(dcontext);
 
 #ifdef MONITOR_UNEXPECTED_IBP
             if (p2int(xsp) < csd->stack_spy_mark) {
@@ -222,7 +221,7 @@ crowd_safe_dispatch(dcontext_t *dcontext) {
             }
 #endif
 
-            if (to_tag != dcontext->next_tag) {
+            if (to_tag != dcontext_get_next_tag(dcontext)) {
                 CS_DET("ibp_to_tag ("PX") differs from dcontext->next_tag ("PX")\n",
                     to_tag, dcontext->next_tag);
             }
@@ -231,7 +230,7 @@ crowd_safe_dispatch(dcontext_t *dcontext) {
             check_shadow_stack_bounds(csd);
             if ((p2int(top->base_pointer) != SHADOW_STACK_SENTINEL) &&
                     (to_tag != top->return_address)) {
-                to_tag = dcontext->next_tag;
+                to_tag = dcontext_get_next_tag(dcontext);
             }
             if ((p2int(top->base_pointer) != SHADOW_STACK_SENTINEL) &&
                     (to_tag == top->return_address)) {
@@ -439,14 +438,6 @@ notify_traversing_syscall(dcontext_t *dcontext, app_pc dsbb_tag, int syscall_num
 
         write_link(dcontext, dsbb_tag, syscall_singleton_pc, get_bb_state(dsbb_tag),
             get_bb_state(syscall_singleton_pc), dsbb_module, &system_module, 0, indirect_edge);
-
-        /* Write the single-block hash for the syscall block instead of writing the pair which
-         * includes its predecessor, because that pairing is extremely difficult to observe. */
-        if (CROWD_SAFE_PAIR_HASH()) {
-            bb_hash_t hash = get_bb_hash(dsbb_tag);
-            hash = (hash ^ (hash << 5U) ^ (bb_hash_t)syscall_number);
-            write_hash(hash, pair_hash_file);
-        }
     }
     hashcode_lock_release();
 
@@ -495,8 +486,7 @@ destroy_link_observer() {
     destroy_indirect_link_observer();
     flush_output_buffers();
 
-    if (CROWD_SAFE_MODULE_LOG())
-        destroy_module_observer();
+    destroy_module_observer();
     close_crowd_safe_util();
 
     dr_global_free(initialized_thread_count, sizeof(int));
@@ -541,6 +531,5 @@ flush_output_buffers() {
 
 static void
 process_exit(void) {
-    if (CROWD_SAFE_MODULE_LOG())
-        close_crowd_safe_trace();
+    close_crowd_safe_trace();
 }
