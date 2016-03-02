@@ -690,6 +690,7 @@ is_spurious_unexpected_return(module_location_t *return_bb_module, app_pc return
 
 void
 raise_alarm(dcontext_t *dcontext, uint predicate_index, uint counter, uint limit) {
+#if (0) // using blacklist for now
     extern alarm_type_t alarm_type;
 
     CS_LOG("ALARM| predicate #%d: %d >= %d\n", predicate_index, counter, limit);
@@ -702,6 +703,7 @@ raise_alarm(dcontext_t *dcontext, uint predicate_index, uint counter, uint limit
             CS_LOG("(popup alarm message not implemented yet)\n");
             break;
     }
+#endif
 }
 
 void

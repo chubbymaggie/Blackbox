@@ -75,9 +75,6 @@ write_final_uibp_report();
 #endif
 
 void
-ibp_thread_exit(dcontext_t *dcontext);
-
-void
 ibp_hash_global_destroy();
 
 #endif

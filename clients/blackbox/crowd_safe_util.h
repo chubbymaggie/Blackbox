@@ -864,7 +864,7 @@ validate_ordinal(dcontext_t *dcontext, app_pc from, app_pc to, byte exit_ordinal
     if ((edge_type == gencode_write_edge) && (exit_ordinal < 5))
         return;
 
-    SEC_LOG(2, "High ordinal %d for edge type %d: "PX" to "PX"\n", exit_ordinal,
+    CS_WARN("High ordinal %d for edge type %d: "PX" to "PX"\n", exit_ordinal,
             edge_type, from, to);
     dr_fragment_log_ordinals(dcontext, from, "\t", 3);
 }

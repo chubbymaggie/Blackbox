@@ -407,6 +407,7 @@ static audit_callbacks_t callbacks = {
 uint crowd_safe_options;
 uint bb_analysis_level;
 char monitor_dataset_dir[MAX_MONITOR_DATASET_DIR_LEN] = {0};
+uint64 process_start_time;
 
 static inline bool
 has_option(const char *option)
@@ -433,6 +434,8 @@ DR_EXPORT void
 dr_init(client_id_t id)
 {
     drsym_init(0);
+
+    process_start_time = dr_get_milliseconds();
 
     dr_register_exit_event(event_exit);
     dr_register_audit_callbacks(&callbacks);

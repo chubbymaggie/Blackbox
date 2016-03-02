@@ -317,10 +317,8 @@ notify_basic_block_constructed(dcontext_t *dcontext, app_pc tag, instrlist_t *il
                 if (CALL_WILL_RETURN(i)) {
                     continuation_pc = instr_get_app_pc(i) + length;
                     if (*dll_entry_callback_block == NULL) {
-                        extern app_pc ldrpCallInitRoutine_address_NT;
-                        if (continuation_pc == ldrpCallInitRoutine_address_NT) {
+                        if (dr_is_dll_entry_callback(continuation_pc))
                             *dll_entry_callback_block = tag;
-                        }
                     }
 
                     ASSERT(instr_get_next(i) == NULL);

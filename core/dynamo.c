@@ -620,6 +620,8 @@ dynamorio_app_init(void)
             sideline_init();
 #endif
 
+        audit_init();
+
         /* thread-specific initialization for the first thread we inject in
          * (in a race with injected threads, sometimes it is not the primary thread)
          */
@@ -667,7 +669,6 @@ dynamorio_app_init(void)
          */
         vm_area_delay_load_coarse_units();
 #endif
-        audit_init();
 
 #ifdef WINDOWS
         if (!INTERNAL_OPTION(noasynch))

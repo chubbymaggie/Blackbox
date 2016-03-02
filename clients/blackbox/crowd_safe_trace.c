@@ -1487,8 +1487,9 @@ flush_trace_buffer(trace_file_t *trace_file) {
             CS_ERR("Failed to write to an output file; errno %d\n", -(int)output_bytes);
             return;
         } else if (output_bytes < (ssize_t) (trace_file->buffer_position * sizeof(uint64))) {
-            CS_ERR("Failed to fully write an 8-byte value to an output file; only %d bytes were written; errno %d\n",
-                output_bytes, errno);
+            CS_ERR("Failed to fully write an 8-byte value to an output file; "
+                   "only %d bytes were written (errno not available)\n", // %d\n",
+                   output_bytes); //, errno);
             return;
         }
         trace_file->buffer_position = 0;

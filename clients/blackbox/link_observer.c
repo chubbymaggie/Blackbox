@@ -506,8 +506,6 @@ link_observer_thread_exit(dcontext_t *dcontext) {
         CS_DET("Thread exit for dcontext "PFX" on thread %d; currently %dth initialized thread\n",
             p2int(dcontext), current_thread_id(), *initialized_thread_count);
 
-    ibp_thread_exit(dcontext);
-
     indirect_link_observer_thread_exit(dcontext);
 
     cstl = GET_CSTL(dcontext);

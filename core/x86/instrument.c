@@ -1743,11 +1743,13 @@ dr_free_module_data(module_data_t *data)
     if (data == NULL)
         return;
 
+#ifndef SECURITY_AUDIT
     if (dcontext != NULL && data == dcontext->client_data->no_delete_mod_data) {
         CLIENT_ASSERT(false, "dr_free_module_data: don\'t free module_data passed to "
                       "the image load or image unload event callbacks.");
         return;
     }
+#endif
 
 #ifdef UNIX
     HEAP_ARRAY_FREE(GLOBAL_DCONTEXT, data->segments, module_segment_data_t,
@@ -1770,7 +1772,7 @@ instrument_module_load_trigger(app_pc modbase)
      * we have to re-look-up the data here.
      */
 
-#ifndef SECURITY_AUDIT
+#ifndef SECURITY_AUDIT // cs-todo: remove these guards
      if (!IS_STRING_OPTION_EMPTY(client_lib)) {
 #endif
         module_area_t *ma;

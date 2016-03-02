@@ -32,6 +32,8 @@ cmake_minimum_required(VERSION 2.6)
 
 if (SECURITY_AUDIT) # around whole file
 
+  set(DynamoRIO_USE_LIBC ON)
+
   add_definitions(-DJITOPT_NARROW_VMAREAS)
 
   # add blackbox client
@@ -117,5 +119,7 @@ if (SECURITY_AUDIT) # around whole file
   #file(APPEND ${CONFIG} "TOOL_OP=\n")
 
   DR_install(FILES "${CONFIG}" DESTINATION ${INSTALL_BLACKBOX_CONFIG})
+
+  set(DynamoRIO_USE_LIBC OFF)
 
 endif (SECURITY_AUDIT)

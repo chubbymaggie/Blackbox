@@ -49,7 +49,7 @@
 
 #define SEC_LOG(level, format, ...) \
 do { \
-    if (audit_callbacks->loglevel >= level) \
+    if (audit_callbacks != NULL && audit_callbacks->loglevel >= level) \
         dr_fprintf(*audit_callbacks->audit_log_file, format, __VA_ARGS__); \
 } while (0)
 
@@ -314,6 +314,10 @@ IMAGE_EXPORT_DIRECTORY *
 dr_get_module_exports_directory(app_pc base_addr,
                                 OUT size_t *exports_size /* may be NULL */
                                 _IF_NOT_X64(bool ldr64));
+
+DR_API
+bool
+dr_is_dll_entry_callback(app_pc tag);
 
 /****************************************************************************
  * CORE INTEGRATION

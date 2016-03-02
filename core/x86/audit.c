@@ -546,6 +546,14 @@ dr_get_module_exports_directory(app_pc base_addr,
     return get_module_exports_directory_common(base_addr, exports_size, ldr64);
 }
 
+DR_API
+bool
+dr_is_dll_entry_callback(app_pc tag)
+{
+    extern app_pc ldrpCallInitRoutine_address_NT;
+    return tag == ldrpCallInitRoutine_address_NT;
+}
+
 /**** need this???
 / * pass 0 to start.  returns -1 when there are no more entries. * /
 int
@@ -654,6 +662,8 @@ audit_init()
 
     threads = dr_global_alloc(sizeof(audit_thread_list_t));
     memset(threads, 0, sizeof(audit_thread_list_t));
+    threads->capacity = 0x20;
+    threads->threads = dr_global_alloc(threads->capacity * sizeof(dcontext_t *));
 
     ibp_table = (ibp_table_t*) dr_global_alloc(sizeof(ibp_table_t));
     flags |= HASHTABLE_PERSISTENT;
