@@ -147,7 +147,7 @@ load_module_entry(char **word_mark) {
     if (strcmp(module_name, BLACKLIST_WILDCARD) == 0) {
         blacklist_module_load_any = true;
     } else {
-        module_entry = dr_strdup(module_name HEAPACCT(ACCT_CLIENT));
+        module_entry = cs_strcpy(module_name);
         drvector_append(blacklist_module_load_list, module_entry);
     }
     return true;
@@ -211,7 +211,7 @@ load_edge_entry(char **word_mark) {
 
     if (from_node_type_offset > BLACKLIST_NODE_OFFSET_NONE || to_node_type_offset > BLACKLIST_NODE_OFFSET_NONE) {
         blacklist_node_type_t *node = CS_ALLOC(sizeof(blacklist_node_type_t));
-        node->from.module_name = dr_strdup(from_module HEAPACCT(ACCT_CLIENT));
+        node->from.module_name = cs_strcpy(from_module);
 
 		has_offset_wildcard |= (from_node_type_offset == BLACKLIST_NODE_OFFSET_WILDCARD);
 		has_offset_wildcard |= (to_node_type_offset == BLACKLIST_NODE_OFFSET_WILDCARD);
@@ -231,7 +231,7 @@ load_edge_entry(char **word_mark) {
             dr_global_free(node, sizeof(blacklist_node_type_t));
             return false;
         }
-        node->to.module_name = dr_strdup(to_module HEAPACCT(ACCT_CLIENT));
+        node->to.module_name = cs_strcpy(to_module);
         if (to_node_type_offset > BLACKLIST_NODE_OFFSET_NONE) {
             node->to.offset = to_node_type_offset;
         } else if (to_export) {
@@ -308,7 +308,7 @@ load_edge_entry(char **word_mark) {
     entry = CS_ALLOC(sizeof(pending_blacklist_entry_t));
     memset(entry, 0, sizeof(pending_blacklist_entry_t));
 
-    entry->from.module_name = dr_strdup(from_module HEAPACCT(ACCT_CLIENT));
+    entry->from.module_name = cs_strcpy(from_module);
     if (from_export) {
         if (to_wildcard) {
             CS_ERR("BL| The blacklist currently does not support wildcard module to an export hash\n");
@@ -330,7 +330,7 @@ load_edge_entry(char **word_mark) {
         }
     }
 
-    entry->to.module_name = dr_strdup(to_module HEAPACCT(ACCT_CLIENT));
+    entry->to.module_name = cs_strcpy(to_module);
     if (!TEST(BLACKLIST_FLAG_FROM_HASH, entry->flags) && to_export) {
         if (from_wildcard) {
             CS_ERR("BL| The blacklist currently does not support export hash to a wildcard module\n");
@@ -388,7 +388,7 @@ load_node_entry(char **word_mark) {
 	node_type_offset = map_node_type_to_offset(offset_str);
     if (node_type_offset > 0U) {
         blacklist_node_type_t *node = CS_ALLOC(sizeof(blacklist_node_type_t));
-        node->from.module_name = dr_strdup(module HEAPACCT(ACCT_CLIENT));
+        node->from.module_name = cs_strcpy(module);
         node->from.offset = node_type_offset;
         node->to.module_name = NULL;
         drvector_append(blacklist_node_type_list, node);
@@ -418,7 +418,7 @@ load_node_entry(char **word_mark) {
     entry = CS_ALLOC(sizeof(pending_blacklist_entry_t));
     memset(entry, 0, sizeof(pending_blacklist_entry_t));
 
-    entry->from.module_name = dr_strdup(module HEAPACCT(ACCT_CLIENT));
+    entry->from.module_name = cs_strcpy(module);
     if (dr_sscanf(offset_str, "0x%x", &entry->from.offset) == 0) {
         CS_ERR("BL| Invalid blacklist format: failed to parse the node offset '%s' as a uint\n",
                offset_str);
@@ -554,7 +554,7 @@ static void
 blacklist_exit_module_load(const char *module_name, char *entry_text) {
     dr_messagebox("Blacklist match in process %d:\n\n    Program loaded module: %s"
                   "\n    Blacklist module: %s\n\nBlackBox will terminate the program.",
-                  get_process_id(), module_name, entry_text);
+                  dr_get_process_id(), module_name, entry_text);
     hashcode_lock_release();
     dr_abort();
 }
@@ -666,7 +666,7 @@ static void
 blacklist_exit_node(app_pc tag, char *entry_text) {
     dr_messagebox("Blacklist match in process %d:\n\n    Program node: "PX
                   "\n    Blacklist node: %s\n\nBlackBox will terminate the program.",
-                  get_process_id(), tag, entry_text);
+                  dr_get_process_id(), tag, entry_text);
     hashcode_lock_release();
     dr_abort();
 }
@@ -674,7 +674,8 @@ blacklist_exit_node(app_pc tag, char *entry_text) {
 void
 check_blacklist_node(module_location_t *module, app_pc tag) {
     char entry_text[256];
-    blacklist_entry_t lookup = {0, tag, 0, 0ULL};
+    blacklist_entry_t lookup = {0};
+    lookup.from = tag;
 
     if (hashtable_lookup(blacklist_edge_table, &lookup) != NULL) {
         dr_snprintf(entry_text, 256, "%s "PX,
@@ -694,7 +695,7 @@ static void
 blacklist_exit_edge(app_pc from, app_pc to, char *entry_text) {
     dr_messagebox("Blacklist match in process %d:\n\n    Program edge: "PX" -> "PX
                   "\n    Blacklist edge: %s\n\nBlackBox will terminate the program.",
-                  get_process_id(), from, to, entry_text);
+                  dr_get_process_id(), from, to, entry_text);
     hashcode_lock_release();
     dr_abort();
 }
@@ -936,9 +937,9 @@ free_pending_blacklist_entry(void *e) {
     pending_blacklist_entry_t *entry = (pending_blacklist_entry_t *) e;
 
     if (!TEST(BLACKLIST_FLAG_FROM_HASH, entry->flags))
-        dr_global_free(entry->from.module_name, strlen(entry->from.module_name) + 1);
+        cs_strfree(entry->from.module_name);
     if (!TEST(BLACKLIST_FLAG_TO_HASH, entry->flags))
-        dr_global_free(entry->to.module_name, strlen(entry->to.module_name) + 1);
+        cs_strfree(entry->to.module_name);
     dr_global_free(entry, sizeof(pending_blacklist_entry_t));
 }
 
@@ -950,7 +951,7 @@ free_blacklist_entry(void *e) {
 static void
 free_module_load_entry(void *e) {
     char *name = (char *) e;
-    dr_global_free(name, strlen(name)+1);
+    cs_strfree(name);
 }
 
 static void
@@ -958,7 +959,7 @@ free_blacklist_node_type(void *e) {
     blacklist_node_type_t *node = (blacklist_node_type_t *) e;
 
     if (node->to.module_name != NULL) // hack: node-only marker
-        dr_global_free(node->from.module_name, strlen(node->from.module_name)+1);
-    dr_global_free(node->to.module_name, strlen(node->to.module_name)+1);
+        cs_strfree(node->from.module_name);
+    cs_strfree(node->to.module_name);
     dr_global_free(node, sizeof(blacklist_node_type_t));
 }

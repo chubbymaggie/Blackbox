@@ -1151,4 +1151,9 @@ cs_strcpy(const char *src) {
     strncpy(dst, src, write_len);
     return dst;
 }
+
+inline void
+cs_strfree(char *str) {
+    dr_global_free(str, strlen(str) + 1);
+}
 #endif
