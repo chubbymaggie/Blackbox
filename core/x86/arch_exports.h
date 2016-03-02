@@ -199,22 +199,31 @@ typedef struct _local_state_extended_t {
 #define TLS_TABLE_SLOT(btype)    ((ushort)(TABLE_OFFSET                                \
                                   + offsetof(table_stat_state_t, table[btype])         \
                                   + offsetof(lookup_table_access_t, lookuptable)))
+
 #ifdef SECURITY_AUDIT
+
+/* DR_API EXPORT TOFILE dr_audit.h */
+/* DR_API EXPORT BEGIN */
+
+#ifdef API_EXPORT_ONLY
+#include <stddef.h>
+#endif
+
 #define SECURITY_AUDIT_STATE_OFFSET  (offsetof(local_state_extended_t,                 \
                                                security_audit_state))
 #define TLS_SHADOW_STACK_POINTER     ((ushort)(SECURITY_AUDIT_STATE_OFFSET +           \
                                                offsetof(local_security_audit_state_t,  \
-                                                 shadow_stack)))
+                                                        shadow_stack)))
 #define TLS_SS_MISS_FRAME            ((ushort)(SECURITY_AUDIT_STATE_OFFSET +           \
                                                offsetof(local_security_audit_state_t,  \
-                                               shadow_stack_miss_frame)))
+                                                        shadow_stack_miss_frame)))
 #define TLS_STACK_SPY_MARK            ((ushort)(SECURITY_AUDIT_STATE_OFFSET +          \
                                                 offsetof(local_security_audit_state_t, \
-                                                stack_spy_mark)))
+                                                         stack_spy_mark)))
 
 #define TLS_IBP_DATA                 ((ushort)(SECURITY_AUDIT_STATE_OFFSET +           \
                                                offsetof(local_security_audit_state_t,  \
-                                               ibp_data)))
+                                                        ibp_data)))
 #define TLS_IBP_MASK_SLOT            ((ushort)(TLS_IBP_DATA +                          \
                                                offsetof(ibp_metadata_t, hash_mask)))
 #define TLS_IBP_SLOT                 ((ushort)(TLS_IBP_DATA +                          \
@@ -228,21 +237,22 @@ typedef struct _local_state_extended_t {
 #define TLS_SYSCALL_FROM_TAG         ((ushort)(TLS_IBP_DATA +                          \
                                                offsetof(ibp_metadata_t,                \
                                                         syscall_from_tag)))
-#ifdef X64
-# define TLS_IBP_FROM_TAG_HIGH       ((ushort)(TLS_IBP_DATA +                          \
+# ifdef X64
+#  define TLS_IBP_FROM_TAG_HIGH       ((ushort)(TLS_IBP_DATA +                          \
                                                offsetof(ibp_metadata_t,                \
                                                         ibp_from_tag) + 4))
-# define TLS_IBP_TO_TAG_HIGH         ((ushort)(TLS_IBP_DATA +                          \
+#  define TLS_IBP_TO_TAG_HIGH         ((ushort)(TLS_IBP_DATA +                          \
                                                offsetof(ibp_metadata_t,                \
                                                         ibp_to_tag) + 4))
-# define TLS_SYSCALL_FROM_TAG_HIGH   ((ushort)(TLS_IBP_DATA +                          \
+#  define TLS_SYSCALL_FROM_TAG_HIGH   ((ushort)(TLS_IBP_DATA +                          \
                                                 offsetof(ibp_metadata_t,               \
                                                          syscall_from_tag) + 4))
-#endif
+# endif
 #define TLS_XDX_TEMP                 ((ushort)(TLS_IBP_DATA +                          \
                                                offsetof(ibp_metadata_t, xdx_temp_slot)))
 #define TLS_XSI_TEMP                 ((ushort)(TLS_IBP_DATA +                          \
                                                offsetof(ibp_metadata_t, xsi_temp_slot)))
+/* DR_API EXPORT END */
 #endif
 
 #ifdef HASHTABLE_STATISTICS

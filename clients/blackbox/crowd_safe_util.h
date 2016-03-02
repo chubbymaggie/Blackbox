@@ -103,8 +103,7 @@ typedef uint clock_type_t;
 # define IS_CONTEXT_SWITCH(sysnum) ((sysnum == 0x2) || (sysnum == 0x40))
 #endif
 
-#define OPND_TLS_FIELD(offs) \
-    opnd_create_tls_slot(os_tls_offset(offs))
+#define OPND_TLS_FIELD(offset) dr_create_audit_tls_slot(offset)
 
 #define IMM_TO_TLS(dc, val, offs) \
     INSTR_CREATE_mov_imm(dc, OPND_TLS_FIELD(offs), OPND_CREATE_INT32(val))
@@ -112,13 +111,11 @@ typedef uint clock_type_t;
 /* Generates an instr_t for a `mov` instruction from `reg` to TLS at `offset`.
  * Parameter `reg` must be of type `reg_id_t`, as defined in instr.h, and
  * parameter `offset` will typically be defined in arch_exports.h. */
-#define SAVE_TO_TLS(dc, reg, offs) \
-    instr_create_save_to_tls(dc, reg, offs)
+#define SAVE_TO_TLS(dc, reg, offs) dr_create_save_to_audit_tls(dc, reg, offs)
 
 /* Generates an instr_t for a `mov` instruction from TLS at `offset` to `reg`.
  * Parameter types are the same as SAVE_TO_TLS */
-#define RESTORE_FROM_TLS(dc, reg, offs) \
-    instr_create_restore_from_tls(dc, reg, offs)
+#define RESTORE_FROM_TLS(dc, reg, offs) dr_create_restore_from_audit_tls(dc, reg, offs)
 
 #ifdef X64
 # define MASK_LOW(val) (uint32)(p2int(val) & 0xFFFFFFFFUL)

@@ -250,9 +250,9 @@ VECTOR_NAME(,NAME_KEY,_remove)(VECTOR_TYPE *vec, COMPARISON_TYPE position) {
 ENTRY_TYPE
 VECTOR_NAME(,NAME_KEY,_get_entry)(VECTOR_TYPE *vec, uint index)
 {
-    ENTRY_TYPE res = NULL;
+    ENTRY_TYPE res = _IF_ENTRY_INLINE(0) _IF_ENTRY_POINTER(NULL);
     if (vec == NULL)
-        return NULL;
+        return _IF_ENTRY_INLINE(0) _IF_ENTRY_POINTER(NULL);
     if (vec->synch)
         dr_mutex_lock(vec->lock);
     if (index < vec->entries)

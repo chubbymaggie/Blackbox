@@ -14,9 +14,9 @@
 #define HASH_BUCKET_INDEX_EXPANSION 0x3
 #define TAG_PAIRING_SHIFT 0x20
 
-#define TEMP_REGISTER1 REG_XSI
+#define TEMP_REGISTER1 DR_REG_XSI
 #define TLS_TEMP_REGISTER1 TLS_XSI_TEMP
-#define TEMP_REGISTER2 REG_XDX
+#define TEMP_REGISTER2 DR_REG_XDX
 #define TLS_TEMP_REGISTER2 TLS_XDX_TEMP
 
 #ifdef UNIX
@@ -151,35 +151,37 @@ uint
 insert_indirect_link_branchpoint(dcontext_t *dcontext, instrlist_t *bb, app_pc bb_tag,
                                  instr_t *ibl_instr, bool is_return, int syscall_number) {
     instr_t /* *save_temp1, */ *memo_branchpoint, /* *save_from_tag, *restore_temp1, */*set_flags;
+    app_pc pc;
     bool is_ibl = false;
     bool is_syscall = false;
     uint flags = 0UL;
     uint added_size = 0U;
     CROWD_SAFE_DEBUG_HOOK(__FUNCTION__, 0);
 
-    if (ibl_instr->src0.kind != PC_kind) {
-        if (ibl_instr->src0.kind == BASE_DISP_kind) {
-            CS_WARN("Skipping instrumentation of branch to ibl with base+disp operand 0\n", ibl_instr->src0.kind);
-        } else {
-            CS_WARN("Skipping instrumentation of branch to ibl with operand 0 of kind %d\n", ibl_instr->src0.kind);
-        }
+    if (!opnd_is_pc(instr_get_src(ibl_instr, 0))) {
+        CS_WARN("Skipping instrumentation of branch to ibl with src0:");
+        opnd_disassemble(dcontext, instr_get_src(ibl_instr, 0), cs_log_file);
         return 0;
     }
 
+    pc = opnd_get_pc(instr_get_src(ibl_instr, 0));
+
+    /*
     if (!*gencode_in_progress) {
-        if (ibl_instr->src0.value.pc == get_shared_gencode(dcontext _IF_X64(GENCODE_FROM_DCONTEXT))->do_syscall)
+        if (pc == get_shared_gencode(dcontext _IF_X64(GENCODE_FROM_DCONTEXT))->do_syscall) // can't see: get_shared_gencode()
             CS_WARN("Linking BB to do_syscall!\n");
 #ifdef UNIX  // CS-TODO: what for WINDOWS?
-        if (ibl_instr->src0.value.pc == get_shared_gencode(dcontext _IF_X64(GENCODE_FROM_DCONTEXT))->do_int_syscall)
+        if (pc == get_shared_gencode(dcontext _IF_X64(GENCODE_FROM_DCONTEXT))->do_int_syscall)
             CS_WARN("Linking BB to do_int_syscall!\n");
 #endif
-        if (ibl_instr->src0.value.pc == get_shared_gencode(dcontext _IF_X64(GENCODE_FROM_DCONTEXT))->fcache_return)
+        if (pc == get_shared_gencode(dcontext _IF_X64(GENCODE_FROM_DCONTEXT))->fcache_return)
             CS_WARN("Linking BB to fcache_return!\n");
     }
+    */
 
-    if (is_tracked_ibl_routine(ibl_instr->src0.value.pc)) {
+    if (is_tracked_ibl_routine(pc)) {
         is_ibl = true;
-    } else if (is_tracked_syscall_routine(ibl_instr->src0.value.pc)) {
+    } else if (is_tracked_syscall_routine(pc)) {
         is_syscall = true;
     }
     if (!(is_ibl || is_syscall))
@@ -232,11 +234,11 @@ insert_indirect_link_branchpoint(dcontext_t *dcontext, instrlist_t *bb, app_pc b
 bool
 is_ibl_setup_instr(instr_t *instr)
 {
-    if (instr->opcode == OP_mov_st) {
+    if (instr_get_opcode(instr) == OP_mov_st) {
         opnd_t dst = instr_get_dst(instr, 0);
         return (opnd_is_base_disp(dst) &&
-                (opnd_get_disp(dst) == os_tls_offset(TLS_IBP_FLAGS) ||
-                opnd_get_disp(dst) == os_tls_offset(TLS_IBP_FROM_TAG)));
+                (dr_is_disp_audit_tls(dst, TLS_IBP_FLAGS) ||
+                 dr_is_disp_audit_tls(dst, TLS_IBP_FROM_TAG)));
     }
     return false;
 }
@@ -247,9 +249,7 @@ prepare_fcache_return_from_ibl(dcontext_t *dcontext, instrlist_t *bb,
     CROWD_SAFE_DEBUG_HOOK_VOID(__FUNCTION__);
 
     if (is_tracked_ibl_routine(ibl_routine_start_pc)) {
-        APP(bb, SAVE_TO_TLS(dcontext,
-            REG_XBX,
-            TLS_IBP_TO_TAG));
+        APP(bb, SAVE_TO_TLS(dcontext, DR_REG_XBX, TLS_IBP_TO_TAG));
 
         // toggle the 'path pending' bit
         APP(bb, INSTR_CREATE_or(dcontext,
@@ -376,8 +376,8 @@ append_indirect_link_notification_hook(dcontext_t *dcontext, instrlist_t *ilist,
 
     track_ibl_routine(ibl_routine_start_pc);
 
-    top_level_jump_targets->shadow_stack_resolution_return = shadow_stack_resolution_jump->next;
-    top_level_jump_targets->indirect_link_notification_return = indirect_link_notification_jump->next;
+    top_level_jump_targets->shadow_stack_resolution_return = instr_get_next(shadow_stack_resolution_jump);
+    top_level_jump_targets->indirect_link_notification_return = instr_get_next(indirect_link_notification_jump);
 }
 
 void
@@ -405,11 +405,11 @@ adjust_for_ibl_instrumentation(dcontext_t *dcontext, app_pc pc, app_pc raw_start
         app_pc ibl_setup_next_pc;
         app_pc ibl_setup_pc = (pc - IBL_SETUP_BYTE_COUNT);
 
-        instr_init(&instr);
-        ibl_setup_next_pc = decode(dcontext, ibl_setup_pc, instr);
-        if (ibl_setup_next_pc != NULL && is_ibl_setup_instr(instr))
+        instr_init(dcontext, &instr);
+        ibl_setup_next_pc = decode(dcontext, ibl_setup_pc, &instr);
+        if (ibl_setup_next_pc != NULL && is_ibl_setup_instr(&instr))
             pc = ibl_setup_pc;
-        instr_destroy(&instr);
+        instr_destroy(dcontext, &instr);
     }
 
     return pc;
@@ -575,7 +575,7 @@ append_indirect_branch_pairing_routine(dcontext_t *dcontext, instrlist_t *ilist,
 
     APP(ilist, INSTR_CREATE_xor(dcontext,
         opnd_create_reg(TEMP_REGISTER1),
-        opnd_create_reg(REG_XBX)));
+        opnd_create_reg(DR_REG_XBX)));
 
     // [hash = hash & 0x00000000FFFFFFFFFULL] [and C %temp1] : { %rbx=to, %temp1=hash-in-progress }
     APP(ilist, INSTR_CREATE_and(dcontext,
@@ -585,7 +585,7 @@ append_indirect_branch_pairing_routine(dcontext_t *dcontext, instrlist_t *ilist,
     // [a = to] [mov %rbx %temp2] : { %rbx=to, %temp1=hash-in-progress }
     APP(ilist, INSTR_CREATE_mov_ld(dcontext,
         opnd_create_reg(TEMP_REGISTER2),
-        opnd_create_reg(REG_XBX)));
+        opnd_create_reg(DR_REG_XBX)));
 
     // [a << 32] [shl 0x20 %temp2] : { %rbx=to, %temp1=hash-in-progress, %temp2=to }
     APP(ilist, INSTR_CREATE_shl(dcontext,
@@ -607,7 +607,7 @@ append_indirect_branch_pairing_routine(dcontext_t *dcontext, instrlist_t *ilist,
     // [hash_a = (from <<o 1) ^ to] [xor %rbx %temp1] : { %rbx=to, %temp1=(from <<o 1) }
     APP(ilist, INSTR_CREATE_xor(dcontext,
         opnd_create_reg(TEMP_REGISTER1),
-        opnd_create_reg(REG_XBX)));
+        opnd_create_reg(DR_REG_XBX)));
 
     // hash is <%rbx,%temp1> : <to, (from <<o 1) ^ to>
 
@@ -645,7 +645,7 @@ append_indirect_branch_pairing_routine(dcontext_t *dcontext, instrlist_t *ilist,
 
     // { %rbx=to, %temp1=hash, %temp2=index } : compare the upper half of the IBP
     APP(ilist, INSTR_CREATE_cmp(dcontext,
-        opnd_create_reg(REG_XBX),
+        opnd_create_reg(DR_REG_XBX),
         OPND_CREATE_MEMPTR(TEMP_REGISTER2, HASH_BUCKET_TO)));
 
     // { %rbx=to, %temp1=hash, %temp2=index } : no match--jump to miss
@@ -767,7 +767,7 @@ append_shadow_stack_resolution_routine(dcontext_t *dcontext, instrlist_t *ilist,
 
     // { %rbx=to, %temp2=%ssp } : compare %sbp with %rsp (equivalent to %sbp - %rsp)
     APP(ilist, INSTR_CREATE_cmp(dcontext,
-        opnd_create_reg(REG_XSP),
+        opnd_create_reg(DR_REG_XSP),
         OPND_TLS_FIELD(TLS_STACK_SPY_MARK)));
 
     APP(ilist, INSTR_CREATE_jcc(dcontext,
@@ -785,7 +785,7 @@ append_shadow_stack_resolution_routine(dcontext_t *dcontext, instrlist_t *ilist,
     // { %rbx=to, %temp2=%ssp } : compare shadow stack's expected return with `to`
     APP(ilist, INSTR_CREATE_cmp(dcontext,
         OPND_CREATE_MEMPTR(TEMP_REGISTER2, -(int)sizeof(shadow_stack_frame_t)),
-        opnd_create_reg(REG_XBX)));
+        opnd_create_reg(DR_REG_XBX)));
 
     // { %rbx=to, %temp2=%ssp } : not equal: jump to unexpected return handler
     APP(ilist, INSTR_CREATE_jcc(dcontext,
@@ -830,7 +830,7 @@ append_shadow_stack_resolution_routine(dcontext_t *dcontext, instrlist_t *ilist,
 
     // { %rbx=to, %temp2=%ssp } : compare %sbp with %rsp (equivalent to %sbp - %rsp)
     APP(ilist, INSTR_CREATE_cmp(dcontext,
-        opnd_create_reg(REG_XSP),
+        opnd_create_reg(DR_REG_XSP),
         OPND_CREATE_MEMPTR(TEMP_REGISTER2, -(int)sizeof(app_pc))));
 
     // { %rbx=to, %temp2=%ssp } : found matching stack level, so jump to shadow_stack_resolution_return

@@ -476,6 +476,34 @@ dr_ibp_clear(dcontext_t *dcontext)
     TABLE_RWLOCK(ibp_table, write, unlock);
 }
 
+DR_API
+opnd_t
+dr_create_audit_tls_slot(ushort offset)
+{
+    return opnd_create_tls_slot(os_tls_offset(offset));
+}
+
+DR_API
+instr_t *
+dr_create_save_to_audit_tls(dcontext_t *dcontext, reg_id_t reg, ushort offset)
+{
+    return instr_create_save_to_tls(dcontext, reg, offset);
+}
+
+DR_API
+instr_t *
+dr_create_restore_from_audit_tls(dcontext_t *dcontext, reg_id_t reg, ushort offset)
+{
+    return instr_create_restore_from_tls(dcontext, reg, offset);
+}
+
+DR_API
+bool
+dr_is_disp_audit_tls(opnd_t opnd, ushort offset)
+{
+    return opnd_get_disp(opnd) == os_tls_offset(offset);
+}
+
 /**** need this???
 / * pass 0 to start.  returns -1 when there are no more entries. * /
 int

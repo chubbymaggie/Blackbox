@@ -276,6 +276,22 @@ DR_API
 void
 dr_ibp_clear(dcontext_t *dcontext);
 
+DR_API
+opnd_t
+dr_create_audit_tls_slot(ushort offset);
+
+DR_API
+instr_t *
+dr_create_save_to_audit_tls(dcontext_t *dcontext, reg_id_t reg, ushort offset);
+
+DR_API
+instr_t *
+dr_create_restore_from_audit_tls(dcontext_t *dcontext, reg_id_t reg, ushort offset);
+
+DR_API
+bool
+dr_is_disp_audit_tls(opnd_t opnd, ushort offset);
+
 /****************************************************************************
  * CORE INTEGRATION
  */

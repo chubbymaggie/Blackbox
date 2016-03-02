@@ -74,7 +74,7 @@
 # define HASHTABLE_INIT_EMPTY NULL
 # define _IF_PAYLOAD_INLINE(x)
 #else
-# define _IF_PAYLOAD_INLINE(x) (x)
+# define _IF_PAYLOAD_INLINE(x) x
 #endif
 
 #ifndef HASHTABLE_ALLOCATOR

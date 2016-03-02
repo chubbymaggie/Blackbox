@@ -1237,7 +1237,7 @@ load_environment_dir(OUT char *dir, const char *name, const char *default_value)
 
 static void
 init_application_short_name() {
-    char *slash, *application_name = dr_get_application_name();
+    const char *slash, *application_name = dr_get_application_name();
 
     while (true) {
         slash = strstr(application_name, FILE_SEPARATOR_STRING);
