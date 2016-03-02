@@ -2424,7 +2424,7 @@ presys_OpenFile(dcontext_t *dcontext, reg_t *param_base)
 #endif
 
 bool
-is_benign_alloc(dcontext_t *dcontext)
+is_at_executable_alloc_syscall(dcontext_t *dcontext)
 {
     priv_mcontext_t *mc = get_mcontext(dcontext);
     int sysnum = (int) mc->xax;

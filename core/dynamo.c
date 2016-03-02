@@ -495,7 +495,7 @@ dynamorio_app_init(void)
         dynamo_heap_initialized = true;
 
 #ifdef SECURITY_AUDIT
-        audit_init(GLOBAL_DCONTEXT, false);
+        audit_client_init(GLOBAL_DCONTEXT, false);
 #endif
 
         /* The process start event should be done after os_init() but before
@@ -667,6 +667,7 @@ dynamorio_app_init(void)
          */
         vm_area_delay_load_coarse_units();
 #endif
+        audit_init();
 
 #ifdef WINDOWS
         if (!INTERNAL_OPTION(noasynch))
@@ -730,8 +731,8 @@ dynamorio_app_init(void)
     }
 
 #ifdef SECURITY_AUDIT
-        if (stats->loglevel > 0)
-            audit_close_logfile();
+        if (stats->loglevel > 0 && early_logfile != INVALID_FILE)
+            dr_close_file(early_logfile);
 #endif
 
     return SUCCESS;
@@ -742,7 +743,7 @@ void
 dynamorio_fork_init(dcontext_t *dcontext)
 {
 #ifdef SECURITY_AUDIT
-    audit_init(dcontext, true/*is fork*/);
+    audit_client_init(dcontext, true/*is fork*/);
 #endif
     /* on a fork we want to re-initialize some data structures, especially
      * log files, which we want a separate directory for
@@ -997,6 +998,9 @@ dynamo_shared_exit(IF_WINDOWS_(thread_record_t *toexit)
      */
     instrument_exit();
 #endif
+#ifdef SECURITY_AUDIT
+    audit_exit();
+#endif
 
     /* we want dcontext around for loader_exit() */
     if (get_thread_private_dcontext() != NULL)
@@ -1187,7 +1191,7 @@ synch_with_threads_at_exit(thread_synch_state_t synch_res)
     end_synch_with_all_threads(threads, num_threads, false/*don't resume*/);
 
 #ifdef SECURITY_AUDIT
-    audit_exit();
+    audit_client_exit();
 #endif
 }
 
@@ -1336,8 +1340,8 @@ dynamo_process_exit(void)
     }
 
 # ifdef SECURITY_AUDIT
-    if (dynamo_exited)
-        audit_close_logfile();
+    if (dynamo_exited && early_logfile != INVALID_FILE)
+        dr_close_file(early_logfile);
 # endif
 
     return SUCCESS;
@@ -1345,7 +1349,8 @@ dynamo_process_exit(void)
 #else /* DEBUG */
     if (dynamo_exited) {
 # ifdef SECURITY_AUDIT
-        audit_close_logfile();
+        if  (early_logfile != INVALID_FILE)
+            dr_close_file(early_logfile);
 # endif
         return SUCCESS;
     }
@@ -1457,6 +1462,9 @@ dynamo_process_exit(void)
          * with the client trying to use api routines that depend on fragment state.
          */
         instrument_exit();
+# ifdef SECURITY_AUDIT
+        audit_exit();
+# endif
         /* for -private_loader we do this here to catch more exit-time crashes */
 # ifdef WINDOWS
         if (!INTERNAL_OPTION(noasynch)
@@ -1477,8 +1485,8 @@ dynamo_process_exit(void)
     os_fast_exit();
 
 #ifdef SECURITY_AUDIT
-    if (dynamo_exited)
-        audit_close_logfile();
+    if (dynamo_exited && early_logfile != INVALID_FILE)
+        dr_close_file(early_logfile);
 #endif
     return SUCCESS;
 #endif /* !DEBUG */

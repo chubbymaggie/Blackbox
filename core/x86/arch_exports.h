@@ -163,7 +163,7 @@ typedef struct _ibp_metadata_t {
 // x64: 96 bytes: 2 cache lines
 // x86: 56 bytes: 1 cache line
 typedef struct _local_security_audit_state_t {
-    void *crowd_safe_thread_local;
+    void *security_audit_thread_local;
     shadow_stack_frame_t *shadow_stack;
     shadow_stack_frame_t *shadow_stack_miss_frame;
     uint stack_spy_mark;

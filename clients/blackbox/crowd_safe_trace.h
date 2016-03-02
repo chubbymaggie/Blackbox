@@ -57,7 +57,7 @@ write_network_event(network_event_type_t type, network_event_status_t status, ne
     uint64/*not a clock_type_t*/ timestamp);
 
 ushort
-write_call_stack(app_pc *tags, uint tag_count);
+write_call_stack(stack_frame_t *frames, uint frame_count);
 
 void
 write_meta_header();
@@ -105,10 +105,10 @@ void
 notify_incoming_link(dcontext_t *dcontext, app_pc from, app_pc to);
 
 void
-notify_basic_block_linking_complete(dcontext_t *dcontext, dr_fragment_t *f);
+notify_basic_block_linking_complete(dcontext_t *dcontext, app_pc tag);
 
 void
-notify_process_fork(dcontext_t *dcontext, wchar_t *child_process_name);
+notify_process_fork(dcontext_t *dcontext, const wchar_t *child_process_name);
 
 void
 confine_to_black_box(module_location_t *anonymous_module, /*module_location_t *owner_module,*/

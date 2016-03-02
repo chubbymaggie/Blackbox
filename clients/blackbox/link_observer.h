@@ -40,8 +40,7 @@ crowd_safe_dispatch(dcontext_t *dcontext);
 /* Called from DR to notify the Link Observer that the two specified basic blocks
  * are being linked in the code cache. */
 void
-notify_linking_fragments(dcontext_t *dcontext, dr_fragment_t *from, app_pc to,
-                         byte exit_ordinal);
+notify_linking_fragments(dcontext_t *dcontext, app_pc from, app_pc to, byte ordinal);
 
 /* Called from CrowdSafe modules to generate a hashcode for the specified basic blocks.
  * Indirect branch observations must call indirect_link_hashtable_insert, which in turn

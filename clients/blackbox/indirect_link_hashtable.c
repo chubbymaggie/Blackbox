@@ -1,52 +1,12 @@
-//#include "../../core/globals.h"
-//#include "../../core/fragment.h"
-//#include "../../core/x86/instrument.h"
 #include "indirect_link_hashtable.h"
 #include "module_observer.h"
 #include "execution_monitor.h"
 #include "crowd_safe_trace.h"
 #include "crowd_safe_util.h"
 
-/**** hashtable.x interface elements ****/
+/**** hashtablex.h interface elements ****/
 
 static void *tag_xref_mutex;
-
-/**** hashtablex.h template ****/
-
-#define NAME_KEY ibp // "ibp" = "indirect branch path"
-
-/* no payload, because we are only checking for existence */
-#define TAG_TYPE bb_tag_pairing_t
-#define ENTRY_TYPE bb_tag_pairing_t
-
-#define ENTRY_TAG(f)              (f)
-#define ENTRY_EMPTY               (bb_tag_pairing_t)0
-
-/* using 2 and forcing the match candidate to an odd number to avoid collisions */
-#define ENTRY_SENTINEL            ((bb_tag_pairing_t)IBP_HASHTABLE_END_SENTINEL)
-
-#define ENTRY_IS_EMPTY(f)         ((f) == ENTRY_EMPTY)
-#define ENTRY_IS_SENTINEL(f)      ((f) == ENTRY_SENTINEL)
-
-// cs-todo: make sure the VM stops all threads for this operation
-/* transitory heap value `removing_tag` specifies the set of entries to remove */
-#define ENTRY_IS_INVALID(f)       false
-
-#define ENTRIES_ARE_EQUAL(t,f,g)    (f == g)
-#define HASHTABLE_WHICH_HEAP(flags) (ACCT_CLIENT)
-#define HTLOCK_RANK               table_rwlock
-#define HASHTABLE_SUPPORT_PERSISTENCE 0
-#define DISABLE_STAT_STUDY 1
-#define FAST_CLEAR 1
-#include "../../core/hashtablex.h" /*** invoke the template ***/
-
-/**** Private Fields ****/
-
-#define GENERIC_ENTRY_IS_REAL(e) ((e) != 0 && (e) != (bb_tag_pairing_t)2)
-
-static const uint INITIAL_KEY_SIZE = 16;
-static const uint LOAD_FACTOR_PERCENT = 80;
-static const uint MASK_OFFSET = 0;
 
 /**** Multimap Template ****/
 
@@ -65,8 +25,6 @@ static const uint MASK_OFFSET = 0;
 #define MULTIMAP_ENTRY_INLINE 1
 #include "../drcontainers/drmultimapx.h"
 
-static drvector_t *threads; // synchronized under TABLE_RWLOCK
-static ibp_table_t *ibp_table; // synchronized under TABLE_RWLOCK
 static xref_multimap_t *xref_multimap; // synchronized under TAG_XREF_LOCK
 
 // Locking note: if necessary to hold the xref lock and the table lock at the same time,
@@ -165,16 +123,6 @@ static void
 hashtable_entry_free_nop(void *);
 
 static void
-hashtable_ibp_init_internal_custom(dcontext_t *, ibp_table_t *);
-
-static void
-hashtable_ibp_resized_custom(dcontext_t *, ibp_table_t *, uint,
-    bb_tag_pairing_t *, bb_tag_pairing_t *, uint, uint);
-
-static void
-hashtable_ibp_free_entry(dcontext_t *, ibp_table_t *, bb_tag_pairing_t);
-
-static void
 report_uibp(dcontext_t *dcontext, crowd_safe_thread_local_t *cstl, bool is_admitted, app_pc from, app_pc to,
     module_location_t *from_module, module_location_t *to_module, uint edge_index);
 
@@ -182,37 +130,11 @@ report_uibp(dcontext_t *dcontext, crowd_safe_thread_local_t *cstl, bool is_admit
 
 void
 ibp_hash_global_init(dcontext_t *dcontext) {
-    uint flags = 0UL;
-
-    threads = (drvector_t*)CS_ALLOC(sizeof(drvector_t));
-#ifdef CROWD_SAFE_TRACK_MEMORY
-    drvector_init(threads, 1000UL, false, NULL); // Resize causes deadlock avoidance error
-#else
-    drvector_init(threads, 10UL, false, NULL);
-#endif
-
     xref_multimap = (xref_multimap_t *)CS_ALLOC(sizeof(xref_multimap_t));
     xref_multimap_init(xref_multimap, xref_value_removed, "ibp xref");
 
     tag_xref_mutex = dr_mutex_create();
     CS_TRACK(tag_xref_mutex, sizeof(mutex_t));
-
-    ibp_table = (ibp_table_t*)CS_ALLOC(sizeof(ibp_table_t));
-    flags |= HASHTABLE_PERSISTENT;
-    flags |= HASHTABLE_ENTRY_SHARED;
-    flags |= HASHTABLE_SHARED;
-    flags |= HASHTABLE_RELAX_CLUSTER_CHECKS;
-    flags |= HASHTABLE_NOT_PRIMARY_STORAGE;
-    hashtable_ibp_init(dcontext,
-        ibp_table,
-        INITIAL_KEY_SIZE,
-        LOAD_FACTOR_PERCENT,
-        HASH_FUNCTION_NONE,
-        MASK_OFFSET,
-        flags
-        _IF_DEBUG("ibp table"));
-
-    CS_LOG("Allocated IBP table at "PX"\n", ibp_table);
 
 #ifdef MONITOR_UNEXPECTED_IBP
     {
@@ -252,47 +174,25 @@ ibp_hash_global_init(dcontext_t *dcontext) {
 #endif
 }
 
-void
-ibp_thread_init(dcontext_t *dcontext) {
-    local_security_audit_state_t *csd = GET_CS_DATA(dcontext);
-    ASSERT(csd != NULL);
-    csd->ibp_data.lookuptable = ibp_table->table;
-    csd->ibp_data.hash_mask = ibp_table->hash_mask;
-
-    TABLE_RWLOCK(ibp_table, write, lock);
-    drvector_append(threads, dcontext);
-    TABLE_RWLOCK(ibp_table, write, unlock);
-}
-
 bb_tag_pairing_t
 ibp_hash_lookup(dcontext_t *dcontext, app_pc from, app_pc to) {
-    bb_tag_pairing_t key, value;
+    bb_tag_pairing_t key;
     CROWD_SAFE_DEBUG_HOOK(__FUNCTION__, (bb_tag_pairing_t)0x0);
 
     key = hash_ibp(from, to);
-
-    TABLE_RWLOCK(ibp_table, read, lock);
-    value = hashtable_ibp_lookup(dcontext, key, ibp_table);
-    TABLE_RWLOCK(ibp_table, read, unlock);
-    return value;
+    return dr_ibp_lookup(dcontext, key);
 }
 
 bool
 ibp_hash_add(dcontext_t *dcontext, app_pc from, app_pc to) {
-    bb_tag_pairing_t key, value;
+    bb_tag_pairing_t key;
     bool added = false;
     CROWD_SAFE_DEBUG_HOOK(__FUNCTION__, (bb_tag_pairing_t)0x0);
 
     // generate the ibp hash id for the from/to pair
     key = hash_ibp(from, to);
 
-    TABLE_RWLOCK(ibp_table, write, lock);
-    value = hashtable_ibp_lookup(dcontext, key, ibp_table);
-
-    if (value == 0ULL) {
-        hashtable_ibp_add(dcontext, key, ibp_table);
-        TABLE_RWLOCK(ibp_table, write, unlock);
-
+    if (dr_ibp_add_new(dcontext, key)) {
         CS_DET("xref (%s): from "PX" to "PX" on thread 0x%x\n", __FUNCTION__, from, to, current_thread_id());
 
         TAG_XREF_LOCK
@@ -300,8 +200,6 @@ ibp_hash_add(dcontext_t *dcontext, app_pc from, app_pc to) {
         xref_multimap_add(xref_multimap, to, key);
         TAG_XREF_UNLOCK
         added = true;
-    } else {
-        TABLE_RWLOCK(ibp_table, write, unlock);
     }
 
     DODEBUG({
@@ -370,9 +268,7 @@ ibp_tag_remove(dcontext_t *dcontext, app_pc tag) {
 
 void
 ibp_clear(dcontext_t *dcontext) {
-    TABLE_RWLOCK(ibp_table, write, lock);
-    hashtable_ibp_clear(dcontext, ibp_table);
-    TABLE_RWLOCK(ibp_table, write, unlock);
+    dr_ibp_clear(dcontext);
 
     TAG_XREF_LOCK
     xref_multimap->notify_value_removed = NULL;
@@ -600,9 +496,7 @@ write_pending_uibp_reports(dcontext_t *dcontext) {
 
             uibp_hashtable_remove(uibp_table, key);
 
-            TABLE_RWLOCK(ibp_table, write, lock);
-            hashtable_ibp_add(dcontext, key, ibp_table);
-            TABLE_RWLOCK(ibp_table, write, unlock);
+            dr_ibp_add(dcontext, key);
 
             xref_multimap_add(xref_multimap, uibp->from, key);
             xref_multimap_add(xref_multimap, uibp->to, key);
@@ -617,49 +511,6 @@ write_pending_uibp_reports(dcontext_t *dcontext) {
     write_uibp_interval_report();
 }
 #endif
-
-/* pass 0 to start.  returns -1 when there are no more entries. */
-int
-ibp_hash_iterate_next(dcontext_t *dcontext, ibp_table_t *htable, int iter,
-                          OUT bb_tag_pairing_t *key) {
-    int i;
-    bb_tag_pairing_t e = 0;
-    for (i = iter; i < (int) htable->capacity; i++) {
-        e = htable->table[i];
-        if (!GENERIC_ENTRY_IS_REAL(e))
-            continue;
-        else
-            break;
-    }
-    if (i >= (int) htable->capacity)
-        return -1;
-    ASSERT(e != 0);
-    if (key != 0)
-        *key = e;
-    return i+1;
-}
-
-int
-ibp_hash_iterate_remove(dcontext_t *dcontext, ibp_table_t *htable, int iter,
-                            bb_tag_pairing_t key) {
-    bb_tag_pairing_t e;
-    uint hindex;
-    bb_tag_pairing_t *rm;
-    int res = iter;
-
-    e = hashtable_ibp_lookup(dcontext, key, htable);
-    rm = hashtable_ibp_lookup_for_removal(e, htable, &hindex);
-    if (rm != NULL) {
-        if (hashtable_ibp_remove_helper(htable, hindex, rm)) {
-            /* pulled entry from start to here so skip it as we've already seen it */
-        } else {
-            /* pulled entry from below us, so step back */
-            res--;
-        }
-        hashtable_ibp_free_entry(dcontext, htable, e);
-    }
-    return res;
-}
 
 #ifdef MONITOR_UNEXPECTED_IBP
 void
@@ -691,37 +542,12 @@ write_final_uibp_report() {
 #endif
 
 void
-ibp_thread_exit(dcontext_t *dcontext) {
-    uint i;
-
-    if (threads == NULL)
-        return;
-
-    TABLE_RWLOCK(ibp_table, write, lock);
-    for (i = 0; i < threads->entries; i++) {
-        if (threads->array[i] == dcontext) {
-            drvector_remove(threads, i);
-            break;
-        }
-    }
-    TABLE_RWLOCK(ibp_table, write, unlock);
-}
-
-void
 ibp_hash_global_destroy() {
 #ifdef MONITOR_UNEXPECTED_IBP
     hashcode_lock_acquire();
     write_final_uibp_report();
     hashcode_lock_release();
 #endif
-
-    CS_LOG("Attempting to cleanup IBP table at "PX"\n", ibp_table);
-    hashtable_ibp_free(GLOBAL_DCONTEXT, ibp_table);
-    dr_global_free(ibp_table, sizeof(ibp_table_t));
-
-    drvector_delete(threads);
-    dr_global_free(threads, sizeof(drvector_t));
-    threads = NULL;
 
     TAG_XREF_LOCK
     xref_multimap->notify_value_removed = NULL;
@@ -777,9 +603,7 @@ xref_value_removed(bb_tag_pairing_t pairing) {
     bool removed;
     ASSERT_TAG_XREF_LOCK
 
-    TABLE_RWLOCK(ibp_table, write, lock);
-    removed = hashtable_ibp_remove(pairing, ibp_table);
-    TABLE_RWLOCK(ibp_table, write, unlock);
+    removed = dr_ibp_remove(pairing);
 
 #ifdef MONITOR_UNEXPECTED_IBP
     if (removed)
@@ -826,7 +650,7 @@ uibp_removed(void *p) {
         return;
 
     if (uibp != NULL) {
-#ifdef MONITOR_UIBP_ONLINE
+# ifdef MONITOR_UIBP_ONLINE
         char *label;
         switch (uibp->flags & (UIBP_FROM_EXPECTED | UIBP_TO_EXPECTED)) {
             case 0:
@@ -843,7 +667,7 @@ uibp_removed(void *p) {
         }
         CS_LOG("UIBP| %d executions of %s ibp "PX" -> "PX" (final--removing ibp)\n",
             uibp->execution_count, label, uibp->from, uibp->to);
-#endif
+# endif
 
         write_meta_uib(uibp->from, uibp->to, uibp->edge_index, uibp->flags & UIBP_CROSS_MODULE,
             uibp->flags & UIBP_ADMITTED, uibp->execution_count);
@@ -852,51 +676,24 @@ uibp_removed(void *p) {
 }
 #endif
 
-static inline void
-update_ibp_table_and_mask(dcontext_t *dcontext, ibp_table_t *htable) {
-    uint i;
-    local_security_audit_state_t *csd;
-
-    for (i = 0; i < threads->entries; i++) {
-        csd = GET_CS_DATA((dcontext_t*)threads->array[i]);
-        ASSERT(csd != NULL);
-        csd->ibp_data.lookuptable = htable->table;
-        csd->ibp_data.hash_mask = htable->hash_mask;
-    }
-
-    CS_LOG("ibp update on thread 0x%x: table is now at "PX" with mask %x\n",
-        current_thread_id(), htable->table, htable->hash_mask);
-}
-
-static void
-hashtable_ibp_init_internal_custom(dcontext_t *dcontext, ibp_table_t *htable) {
-    update_ibp_table_and_mask(dcontext, htable);
-}
-
-static void
-hashtable_ibp_resized_custom(dcontext_t *dcontext, ibp_table_t *htable,
-                                uint old_capacity, bb_tag_pairing_t *old_table,
-                                bb_tag_pairing_t *old_table_unaligned,
-                                uint old_ref_count, uint old_table_flags) {
-    update_ibp_table_and_mask(dcontext, htable);
-}
-
 #ifdef MONITOR_UNEXPECTED_IBP
 static void
-report_uibp(dcontext_t *dcontext, crowd_safe_thread_local_t *cstl, bool is_admitted, app_pc from, app_pc to,
-    module_location_t *from_module, module_location_t *to_module, uint edge_index)
+report_uibp(dcontext_t *dcontext, crowd_safe_thread_local_t *cstl, bool is_admitted,
+            app_pc from, app_pc to,
+            module_location_t *from_module, module_location_t *to_module, uint edge_index)
 {
     uint i;
     local_security_audit_state_t *csd = GET_CS_DATA(dcontext);
     clock_type_t interval, uibp_interval, suibp_interval;
+    app_pc xsp = dcontext_get_app_stack_pointer(dcontext);
 
     ASSERT_TAG_XREF_LOCK
 
     if (csd->stack_spy_mark == 0UL) {
         CS_DET("SPY| Activating stack suspicion for %s("PX") -> %s("PX") at XSP="PX"\n",
                from_module->module_name, MODULAR_PC(from_module, from),
-               to_module->module_name, MODULAR_PC(to_module, to), XSP(dcontext));
-        csd->stack_spy_mark = p2int(XSP(dcontext));
+               to_module->module_name, MODULAR_PC(to_module, to), xsp);
+        csd->stack_spy_mark = p2int(xsp);
         cstl->stack_suspicion.uib_count = (is_admitted > 0);
         cstl->stack_suspicion.suib_count = !is_admitted;
         if (from_module == to_module) {
@@ -928,20 +725,20 @@ report_uibp(dcontext_t *dcontext, crowd_safe_thread_local_t *cstl, bool is_admit
             if (global_uibp->observed_interval_count[i] < 0xffffffffUL) {
                 global_uibp->observed_interval_count[i]++; // cs-todo: duplicate counters for intervals
                 NOTIFY_INTERVAL_PREDICATE_EVENT(dcontext, uib_intervals, i);
-#ifdef MONITOR_UIBP_ONLINE
+# ifdef MONITOR_UIBP_ONLINE
                 if (is_report_threshold(&global_uibp->report_masks[i], global_uibp->observed_interval_count[i]))
                     CS_LOG("UIBP| %d %s intervals (%d cycles each)\n",
                         global_uibp->observed_interval_count[i], uibp_intervals[i].label, uibp_intervals[i].interval);
-#endif
+# endif
                 if (cstl->thread_clock.consecutive_interval_count[i] < 0xffffffffUL) {
                     cstl->thread_clock.consecutive_interval_count[i]++;
                     if (cstl->thread_clock.consecutive_interval_count[i] > global_uibp->max_consecutive_intervals[i]) {
                         global_uibp->max_consecutive_intervals[i] = cstl->thread_clock.consecutive_interval_count[i];
-#ifdef MONITOR_UIBP_ONLINE
+# ifdef MONITOR_UIBP_ONLINE
                         CS_LOG("UIBP| %d consecutive %s intervals (%d cycles each)\n",
                             cstl->thread_clock.consecutive_interval_count[i],
                                 uibp_intervals[i].label, uibp_intervals[i].interval);
-#endif
+# endif
                     }
                 }
             }
@@ -993,7 +790,7 @@ report_uibp(dcontext_t *dcontext, crowd_safe_thread_local_t *cstl, bool is_admit
         }
     }
 
-#ifdef MONITOR_UIBP_ONLINE
+# ifdef MONITOR_UIBP_ONLINE
     if (interval < uibp_intervals[0].interval) {
         if (from_module == to_module)
             CS_LOG("UIBP| micro interval %d: %s("PX" -> "PX") %s -> %s, %d consecutive\n", (uint)interval,
@@ -1006,7 +803,7 @@ report_uibp(dcontext_t *dcontext, crowd_safe_thread_local_t *cstl, bool is_admit
                 cstl->thread_clock.last_uibp_is_admitted ? "Adm" : "Susp", is_admitted ? "Adm" : "Susp",
                 cstl->thread_clock.consecutive_interval_count[0]);
     }
-#endif
+# endif
 
     if (!is_admitted)
         cstl->thread_clock.last_suibp_timestamp = cstl->thread_clock.clock;
@@ -1014,9 +811,3 @@ report_uibp(dcontext_t *dcontext, crowd_safe_thread_local_t *cstl, bool is_admit
     cstl->thread_clock.last_uibp_is_admitted = is_admitted;
 }
 #endif
-
-static void
-hashtable_ibp_free_entry(dcontext_t *dcontext, ibp_table_t *htable,
-                             bb_tag_pairing_t entry)
-{ /* nothing -- table only stores keys */
-}

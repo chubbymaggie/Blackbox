@@ -35,12 +35,104 @@
 #include "../link.h"
 #include "../module_shared.h"
 #include "../monitor.h"
+#include "../hashtable.h"
+#include "instr.h"
+#include "instr_create.h"
 #include "instrument.h"
 #include "audit.h"
 
 #ifdef SECURITY_AUDIT /* around whole file */
 
 audit_callbacks_t *audit_callbacks = NULL;
+
+#define FRAME_RETURN_ADDRESS(bp) ((app_pc) *((bp)+1))
+
+#define PRE(target, added_size, instr_expr) \
+do { \
+    instr_t *instr = instr_expr; \
+    added_size += instr_length(dcontext, instr); \
+    instr_set_translation(instr, instr_get_app_pc(target)); \
+    instrlist_preinsert(ilist, target, instr); \
+} while (0);
+
+#define POST(target, added_size, instr_expr) \
+do { \
+    instr_t *instr = instr_expr; \
+    added_size += instr_length(dcontext, instr); \
+    instr_set_translation(instr, instr_get_app_pc(target)); \
+    instrlist_postinsert(ilist, target, instr); \
+} while (0);
+
+#define SAVE_TO_TLS(dc, reg, offs) \
+    instr_create_save_to_tls(dc, reg, offs)
+
+#define RESTORE_FROM_TLS(dc, reg, offs) \
+    instr_create_restore_from_tls(dc, reg, offs)
+
+/**** hashtablex header template ****/
+
+/* Used by the hashtablex template to name the hashtable functions. */
+#define NAME_KEY ibp // "ibp" = "indirect branch path"
+
+/* The entry type is just key, no payload. */
+#define ENTRY_TYPE bb_tag_pairing_t
+
+/* End sentinel is <1,0>
+ * No collisions in x32
+ * Collision occurs in x64 on { mask32(to) == 1, (mask32(from) ^ (mask32(to) <<o 1)) == 0 }
+ *     => { mask32(to) == 1, mask32(from) == 2 }
+ *     (quite unlikely, though possible) */
+#define IBP_HASHTABLE_END_SENTINEL ((bb_tag_pairing_t) 0x100000000)
+
+/* none */
+#define CUSTOM_FIELDS
+
+#define DISABLE_STAT_STUDY 1
+#define FAST_CLEAR 1
+
+/* Request template header content. */
+#define HASHTABLEX_HEADER 1
+#include "../hashtablex.h" /*** invoke the template ***/
+#undef HASHTABLEX_HEADER
+
+/**** hashtablex.h template ****/
+
+#define NAME_KEY ibp // "ibp" = "indirect branch path"
+
+/* no payload, because we are only checking for existence */
+#define TAG_TYPE bb_tag_pairing_t
+#define ENTRY_TYPE bb_tag_pairing_t
+
+#define ENTRY_TAG(f)              (f)
+#define ENTRY_EMPTY               ((bb_tag_pairing_t) 0)
+
+/* using 2 and forcing the match candidate to an odd number to avoid collisions */
+#define ENTRY_SENTINEL            ((bb_tag_pairing_t) IBP_HASHTABLE_END_SENTINEL)
+
+#define ENTRY_IS_EMPTY(f)         ((f) == ENTRY_EMPTY)
+#define ENTRY_IS_SENTINEL(f)      ((f) == ENTRY_SENTINEL)
+
+// cs-todo: make sure the VM stops all threads for this operation
+/* transitory heap value `removing_tag` specifies the set of entries to remove */
+#define ENTRY_IS_INVALID(f)       false
+
+#define ENTRIES_ARE_EQUAL(t,f,g)    (f == g)
+#define HASHTABLE_WHICH_HEAP(flags) (ACCT_CLIENT)
+#define HTLOCK_RANK               table_rwlock
+#define HASHTABLE_SUPPORT_PERSISTENCE 0
+#define DISABLE_STAT_STUDY 1
+#define FAST_CLEAR 1
+#include "../hashtablex.h" /*** invoke the template ***/
+
+/**** Private Fields ****/
+
+#define GENERIC_ENTRY_IS_REAL(e) ((e) != 0 && (e) != (bb_tag_pairing_t) 2)
+
+static const uint INITIAL_KEY_SIZE = 16;
+static const uint LOAD_FACTOR_PERCENT = 80;
+static const uint MASK_OFFSET = 0;
+
+static ibp_table_t *ibp_table;
 
 DR_API
 void
@@ -97,6 +189,17 @@ ibp_metadata_t *
 dcontext_get_ibp_data(dcontext_t *dcontext)
 {
     return &dcontext_get_audit_state(dcontext)->ibp_data;
+}
+
+DR_API
+app_pc
+dcontext_get_app_stack_pointer(dcontext_t *dcontext)
+{
+#ifdef X64
+    return (app_pc) dcontext->upcontext_ptr->mcontext.rsp;
+#else
+    return (app_pc) dcontext->upcontext_ptr->mcontext.esp;
+#endif
 }
 
 DR_API
@@ -256,5 +359,333 @@ dr_log_last_exit(dcontext_t *dcontext, app_pc tag, const char *prefix, uint logl
                 in_f->tag, l->flags);
     }
 }
+
+DR_API
+void
+dr_instrument_call_site(dcontext_t *dcontext, instrlist_t *ilist, instr_t *call_instr) {
+    uint added_size = 0U;
+    instr_t *stack_add = INSTR_CREATE_lea(dcontext,
+        opnd_create_reg(DR_REG_XSI),
+        opnd_create_base_disp(DR_REG_NULL, DR_REG_XSI, 1, sizeof(shadow_stack_frame_t), OPSZ_lea));
+
+    PRE(call_instr, added_size, SAVE_TO_TLS(dcontext, DR_REG_XSI, TLS_XSI_TEMP));
+    PRE(call_instr, added_size, RESTORE_FROM_TLS(dcontext, DR_REG_XSI, TLS_SHADOW_STACK_POINTER));
+
+    PRE(call_instr, added_size, INSTR_CREATE_mov_imm(dcontext,
+        OPND_CREATE_MEMPTR(DR_REG_XSI, 0),
+        OPND_CREATE_INTPTR(instr_get_app_pc(call_instr) + instr_length(dcontext, call_instr))));
+
+    PRE(call_instr, added_size, INSTR_CREATE_mov_st(dcontext,
+        OPND_CREATE_MEMPTR(DR_REG_XSI, sizeof(app_pc)),
+        opnd_create_reg(DR_REG_XSP)));
+
+    PRE(call_instr, added_size, stack_add);
+
+    PRE(call_instr, added_size, SAVE_TO_TLS(dcontext, DR_REG_XSI, TLS_SHADOW_STACK_POINTER));
+    PRE(call_instr, added_size, RESTORE_FROM_TLS(dcontext, DR_REG_XSI, TLS_XSI_TEMP));
+}
+
+DR_API
+uint
+dr_instrument_return_site(dcontext_t *dcontext, instrlist_t *ilist, instr_t *next, app_pc tag) {
+    uint added_size = 0U;
+    instr_t *stack_sub = INSTR_CREATE_lea(dcontext,
+        opnd_create_reg(DR_REG_XCX),
+        opnd_create_base_disp(DR_REG_NULL, DR_REG_XCX, 1, -(int)sizeof(shadow_stack_frame_t), OPSZ_lea));
+
+    // lea ecx, [TLS_SHADOW_STACK_POINTER-8] - <singleton-return-address>
+    // jecxz next
+    PRE(next, added_size, RESTORE_FROM_TLS(dcontext, DR_REG_XCX, TLS_SHADOW_STACK_POINTER));
+    PRE(next, added_size, stack_sub);
+    PRE(next, added_size, SAVE_TO_TLS(dcontext, DR_REG_XCX, TLS_SHADOW_STACK_POINTER));
+    return added_size;
+}
+
+DR_API
+bb_tag_pairing_t
+dr_ibp_lookup(dcontext_t *dcontext, bb_tag_pairing_t key)
+{
+    bb_tag_pairing_t value;
+
+    TABLE_RWLOCK(ibp_table, read, lock);
+    value = hashtable_ibp_lookup(dcontext, key, ibp_table);
+    TABLE_RWLOCK(ibp_table, read, unlock);
+
+    return value;
+}
+
+DR_API
+void
+dr_ibp_add(dcontext_t *dcontext, bb_tag_pairing_t value)
+{
+    TABLE_RWLOCK(ibp_table, write, lock);
+    hashtable_ibp_add(dcontext, value, ibp_table);
+    TABLE_RWLOCK(ibp_table, write, unlock);
+}
+
+DR_API
+bool
+dr_ibp_add_new(dcontext_t *dcontext, bb_tag_pairing_t possibly_new)
+{
+    bool added = false;
+    bb_tag_pairing_t value;
+
+    TABLE_RWLOCK(ibp_table, write, lock);
+    value = hashtable_ibp_lookup(dcontext, possibly_new, ibp_table);
+    if (value == 0ULL) {
+        hashtable_ibp_add(dcontext, possibly_new, ibp_table);
+        added = true;
+    }
+    TABLE_RWLOCK(ibp_table, write, unlock);
+    return added;
+}
+
+DR_API
+bb_tag_pairing_t *
+dr_ibp_lookup_for_removal(bb_tag_pairing_t key, uint *index)
+{
+    return NULL;
+}
+
+DR_API
+bool
+dr_ibp_remove(bb_tag_pairing_t value)
+{
+    bool removed;
+
+    TABLE_RWLOCK(ibp_table, write, lock);
+    removed = hashtable_ibp_remove(value, ibp_table);
+    TABLE_RWLOCK(ibp_table, write, unlock);
+
+    return removed;
+}
+
+DR_API
+bool
+dr_ibp_remove_helper(uint hindex, bb_tag_pairing_t *previous)
+{
+    return false;
+}
+
+DR_API
+void
+dr_ibp_clear(dcontext_t *dcontext)
+{
+    TABLE_RWLOCK(ibp_table, write, lock);
+    hashtable_ibp_clear(dcontext, ibp_table);
+    TABLE_RWLOCK(ibp_table, write, unlock);
+}
+
+/**** need this???
+/ * pass 0 to start.  returns -1 when there are no more entries. * /
+int
+ibp_hash_iterate_next(dcontext_t *dcontext, ibp_table_t *htable, int iter,
+                          OUT bb_tag_pairing_t *key) {
+    int i;
+    bb_tag_pairing_t e = 0;
+    for (i = iter; i < (int) htable->capacity; i++) {
+        e = htable->table[i];
+        if (!GENERIC_ENTRY_IS_REAL(e))
+            continue;
+        else
+            break;
+    }
+    if (i >= (int) htable->capacity)
+        return -1;
+    ASSERT(e != 0);
+    if (key != 0)
+        *key = e;
+    return i+1;
+}
+
+int
+ibp_hash_iterate_remove(dcontext_t *dcontext, ibp_table_t *htable, int iter,
+                            bb_tag_pairing_t key) {
+    bb_tag_pairing_t e;
+    uint hindex;
+    bb_tag_pairing_t *rm;
+    int res = iter;
+
+    e = hashtable_ibp_lookup(dcontext, key, htable);
+    rm = hashtable_ibp_lookup_for_removal(e, htable, &hindex);
+    if (rm != NULL) {
+        if (hashtable_ibp_remove_helper(htable, hindex, rm)) {
+            / * pulled entry from start to here so skip it as we've already seen it * /
+        } else {
+            / * pulled entry from below us, so step back * /
+            res--;
+        }
+        hashtable_ibp_free_entry(dcontext, htable, e);
+    }
+    return res;
+}
+*/
+
+/****************************************************************************
+ * CORE INTEGRATION
+ */
+
+typedef struct _audit_thread_list_t {
+    uint thread_count;
+    uint capacity;
+    uint empty_slots;
+    dcontext_t **threads;
+} audit_thread_list_t;
+
+static audit_thread_list_t *threads;  /* synchronized under ibp_table_t's TABLE_RWLOCK */
+
+static void
+audit_thread_append(dcontext_t *thread)
+{
+    if (threads->thread_count == threads->capacity) {
+        uint old_capacity = threads->capacity;
+        dcontext_t **new_threads;
+
+        threads->capacity *= 2;
+        new_threads = dr_global_alloc(threads->capacity * sizeof(dcontext_t *));
+        memcpy(new_threads, threads, old_capacity * sizeof(dcontext_t *));
+        dr_global_free(threads->threads, old_capacity * sizeof(dcontext_t *));
+        threads->threads = new_threads;
+    }
+
+    if (threads->empty_slots > 0) {
+        uint i, end = threads->thread_count + threads->empty_slots;
+
+        for (i = 0; i < end; i++) {
+            if (threads->threads[i] == NULL)
+                threads->threads[i] = thread;
+        }
+        threads->empty_slots--;
+    } else {
+        threads->threads[threads->thread_count++] = thread;
+    }
+    threads->thread_count++;
+}
+
+static void
+audit_thread_remove(dcontext_t *thread)
+{
+    uint i, end = threads->thread_count + threads->empty_slots;
+
+    for (i = 0; i < end; i++) {
+        if (threads->threads[i] == thread) {
+            threads->threads[i] = NULL;
+            break;
+        }
+    }
+    threads->thread_count--;
+    threads->empty_slots++;
+}
+
+void
+audit_init()
+{
+    uint flags = 0UL;
+
+    threads = dr_global_alloc(sizeof(audit_thread_list_t));
+    memset(threads, 0, sizeof(audit_thread_list_t));
+
+    ibp_table = (ibp_table_t*) dr_global_alloc(sizeof(ibp_table_t));
+    flags |= HASHTABLE_PERSISTENT;
+    flags |= HASHTABLE_ENTRY_SHARED;
+    flags |= HASHTABLE_SHARED;
+    flags |= HASHTABLE_RELAX_CLUSTER_CHECKS;
+    flags |= HASHTABLE_NOT_PRIMARY_STORAGE;
+    hashtable_ibp_init(GLOBAL_DCONTEXT,
+        ibp_table,
+        INITIAL_KEY_SIZE,
+        LOAD_FACTOR_PERCENT,
+        HASH_FUNCTION_NONE,
+        MASK_OFFSET,
+        flags
+        _IF_DEBUG("ibp table"));
+
+    SEC_LOG(3, "Allocated IBP table at "PX"\n", ibp_table);
+}
+
+void
+audit_exit()
+{
+    dr_global_free(threads->threads, threads->capacity * sizeof(dcontext_t *));
+    dr_global_free(threads, sizeof(audit_thread_list_t));
+    threads = NULL;
+
+    hashtable_ibp_free(GLOBAL_DCONTEXT, ibp_table);
+    dr_global_free(ibp_table, sizeof(ibp_table_t));
+}
+
+void
+audit_thread_init(dcontext_t *dcontext)
+{
+    local_security_audit_state_t *csd = dcontext_get_audit_state(dcontext);
+
+    ASSERT(csd != NULL);
+
+    csd->ibp_data.lookuptable = ibp_table->table;
+    csd->ibp_data.hash_mask = ibp_table->hash_mask;
+
+    TABLE_RWLOCK(ibp_table, write, lock);
+    audit_thread_append(dcontext);
+    TABLE_RWLOCK(ibp_table, write, unlock);
+
+    audit_client_thread_init(dcontext);
+}
+
+void
+audit_thread_exit(dcontext_t *dcontext)
+{
+    if (threads == NULL)
+        return;
+
+    TABLE_RWLOCK(ibp_table, write, lock);
+    audit_thread_remove(dcontext);
+    TABLE_RWLOCK(ibp_table, write, unlock);
+
+    audit_client_thread_exit(dcontext);
+}
+
+static inline void
+update_ibp_table_and_mask(dcontext_t *dcontext, ibp_table_t *htable) {
+    uint i, end = threads->thread_count + threads->empty_slots;
+    local_security_audit_state_t *csd;
+
+    for (i = 0; i < end; i++) {
+        if (threads->threads[i] != NULL) {
+            csd = dcontext_get_audit_state((dcontext_t *) threads->threads[i]);
+            csd->ibp_data.lookuptable = htable->table;
+            csd->ibp_data.hash_mask = htable->hash_mask;
+        }
+    }
+
+    SEC_LOG(3, "ibp update on thread 0x%x: table is now at "PX" with mask %x\n",
+            dr_get_thread_id(dcontext), htable->table, htable->hash_mask);
+}
+
+static void
+hashtable_ibp_init_internal_custom(dcontext_t *dcontext, ibp_table_t *htable) {
+    update_ibp_table_and_mask(dcontext, htable);
+}
+
+static void
+hashtable_ibp_resized_custom(dcontext_t *dcontext, ibp_table_t *htable,
+                                uint old_capacity, bb_tag_pairing_t *old_table,
+                                bb_tag_pairing_t *old_table_unaligned,
+                                uint old_ref_count, uint old_table_flags) {
+    update_ibp_table_and_mask(dcontext, htable);
+}
+
+static void
+hashtable_ibp_free_entry(dcontext_t *dcontext, ibp_table_t *table, bb_tag_pairing_t tag)
+{
+    /*nothing*/
+}
+
+#ifdef DEBUG
+static void
+hashtable_ibp_study_custom(dcontext_t *dcontext, ibp_table_t *htable, uint inc)
+{
+    /*none*/
+}
+#endif /* DEBUG */
 
 #endif /* SECURITY_AUDIT */

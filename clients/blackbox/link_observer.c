@@ -130,7 +130,6 @@ link_observer_thread_init(dcontext_t *dcontext) {
 
     SET_CSTL(dcontext, cstl);
 
-    ibp_thread_init(dcontext);
     indirect_link_observer_thread_init(dcontext);
 }
 
@@ -170,7 +169,7 @@ crowd_safe_dispatch(dcontext_t *dcontext) {
         ibp_data->ibp_from_tag = PC(0); // prevent syscall IBL from thinking it's IBP
     }
 
-    // log_shadow_stack(dcontext, csd, "#disp#");
+    // dr_analyze_shadow_stack(dcontext, csd, "#disp#");
 
     if (IBP_IS_NEW_PATH(ibp_data)) {   // found a new IBP
 
@@ -214,10 +213,11 @@ crowd_safe_dispatch(dcontext_t *dcontext) {
             bool matched_address = false;
             bool context_switch = false;
             uint unwind_count = 0;
+            app_pc xsp = dcontext_get_stack_pointer(dcontext);
 
 #ifdef MONITOR_UNEXPECTED_IBP
-            if (p2int(XSP(dcontext)) < csd->stack_spy_mark) {
-                CS_DET("SPY| Clearing stack suspicion at XSP="PX"\n", XSP(dcontext));
+            if (p2int(xsp) < csd->stack_spy_mark) {
+                CS_DET("SPY| Clearing stack suspicion at XSP="PX"\n", xsp);
                 csd->stack_spy_mark = 0UL;
             }
 #endif
@@ -236,15 +236,15 @@ crowd_safe_dispatch(dcontext_t *dcontext) {
             if ((p2int(top->base_pointer) != SHADOW_STACK_SENTINEL) &&
                     (to_tag == top->return_address)) {
 #ifdef X64
-                ASSERT(SHADOW_FRAME(csd)->base_pointer <= XSP(dcontext));
+                ASSERT(SHADOW_FRAME(csd)->base_pointer <= xsp);
                 ASSERT((SHADOW_FRAME(csd)->base_pointer == (app_pc)SHADOW_STACK_SENTINEL) ||
-                        SHADOW_FRAME(csd)->base_pointer == XSP(dcontext));
+                        SHADOW_FRAME(csd)->base_pointer == xsp);
 #endif
                 csd->shadow_stack--;
                 matched_address = true;
             } else {
                 bool expected = false;
-                int stack_delta = XSP(dcontext) - SHADOW_FRAME(csd)->base_pointer;
+                int stack_delta = xsp - SHADOW_FRAME(csd)->base_pointer;
                 if (stack_delta < 0)
                     stack_delta = -stack_delta;
 
@@ -252,7 +252,7 @@ crowd_safe_dispatch(dcontext_t *dcontext) {
                 if (stack_delta > 0x1000) {
                     context_switch = true;
                 } else {
-                    while ((SHADOW_FRAME(csd)->base_pointer < XSP(dcontext)) &&
+                    while ((SHADOW_FRAME(csd)->base_pointer < xsp) &&
                           (SHADOW_FRAME(csd)->base_pointer != (app_pc)SHADOW_STACK_SENTINEL))
                     {
                         csd->shadow_stack--;
@@ -270,13 +270,13 @@ crowd_safe_dispatch(dcontext_t *dcontext) {
             IBP_SET_META(ibp_data, &, ~IBP_META_STACK_PENDING);
 
 #ifdef DEBUG
-            if (XSP(dcontext) != top->base_pointer) {
+            if (xsp != top->base_pointer) {
                 uint i;
                 local_security_audit_state_t *csd = GET_CS_DATA(dcontext);
                 shadow_stack_frame_t *entry;
                 for (i = 5; i > 0; i--) {
                     entry = SHADOW_FRAME(csd) - i;
-                    if (entry <= ((crowd_safe_thread_local_t*)csd->crowd_safe_thread_local)->shadow_stack_base)
+                    if (entry <= GET_SHADOW_STACK_BASE(csd))
                         break;
                     if (entry->base_pointer == int2p(SHADOW_STACK_SENTINEL))
                         break;
@@ -286,10 +286,10 @@ crowd_safe_dispatch(dcontext_t *dcontext) {
                             entry->base_pointer, entry->return_address,
                             (entry-1)->base_pointer, (entry-1)->return_address);
                     }
-                    if (XSP(dcontext) > entry->base_pointer) {
+                    if (xsp > entry->base_pointer) {
                         CS_DET("XSP "PX" > frame(%d) "PX" by %d words | last_fragment "PX" | next tag "PX"\n",
-                            XSP(dcontext), i, entry->base_pointer,
-                            (p2int(XSP(dcontext)) - p2int(entry->base_pointer)) / 4,
+                            xsp, i, entry->base_pointer,
+                            (p2int(xsp) - p2int(entry->base_pointer)) / 4,
                             dcontext->last_fragment->tag, dcontext->next_tag);
                         break;
                     }
@@ -313,7 +313,7 @@ crowd_safe_dispatch(dcontext_t *dcontext) {
                 } else {
                     CS_DET("<ss> UR (%d unwound) XSP: "PX" %s SS.base: "PX" @ "PX"(%d)"
                            " | ibp_to: "PX" %s SS.addr: "PX"; thread 0x%x\n",
-                           unwind_count, XSP(dcontext), XSP(dcontext) > top->base_pointer ? ">" : "<",
+                           unwind_count, xsp, xsp > top->base_pointer ? ">" : "<",
                            top->base_pointer, int2p(top), SHADOW_STACK_FRAME_NUMBER(csd, top),
                            ibp_data->ibp_to_tag, ibp_data->ibp_to_tag == top->return_address ? "==" : "!=",
                            top->return_address, current_thread_id());

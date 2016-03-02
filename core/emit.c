@@ -937,7 +937,7 @@ emit_fragment_common(dcontext_t *dcontext, app_pc tag,
 
 #ifdef SECURITY_AUDIT
     if (!TEST(FRAG_IS_TRACE, f->flags))
-        audit_bb_link_complete(dcontext, f);
+        audit_bb_link_complete(dcontext, f->tag);
 #endif
 
     if (add_to_htable) {

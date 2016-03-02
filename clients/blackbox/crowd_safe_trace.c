@@ -262,20 +262,20 @@ write_network_event(network_event_type_t type, network_event_status_t status, ne
 }
 
 ushort
-write_call_stack(app_pc *tags, uint tag_count) {
+write_call_stack(stack_frame_t *frames, uint frame_count) {
     uint i;
     uint64 entry;
 
     output_lock_acquire();
 
-    for (i = 0; i < (tag_count - 1); i += 2) {
-        entry = p2int(tags[i | 1]);
-        entry |= (((uint64) tags[i]) << 0x20);
+    for (i = 0; i < (frame_count - 1); i += 2) {
+        entry = p2int(frames[i | 1]->return_address);
+        entry |= (((uint64) frames[i]->return_address) << 0x20);
         write_byte_aligned_file_entry(call_stack_file, entry);
     }
 
-    if ((tag_count & 1) == 0)
-        entry = (((uint64) tags[tag_count - 1]) << 0x20);
+    if ((frame_count & 1) == 0)
+        entry = (((uint64) frames[frame_count - 1]->return_address) << 0x20);
     else
         entry = 0ULL;
     write_byte_aligned_file_entry(call_stack_file, entry);
@@ -723,7 +723,7 @@ notify_basic_block_linking_complete(dcontext_t *dcontext, app_pc tag) {
 }
 
 void
-notify_process_fork(dcontext_t *dcontext, wchar_t *child_process_name) {
+notify_process_fork(dcontext_t *dcontext, const wchar_t *child_process_name) {
     crowd_safe_thread_local_t *cstl = GET_CSTL(dcontext);
     bb_hash_t hash = wstring_hash(child_process_name);
     app_pc from_tag = dr_get_main_module()->entry_point;

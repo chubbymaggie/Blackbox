@@ -27,51 +27,12 @@
  * indirect_link_observer).
  */
 
-//#include "../../core/hashtable.h"
 #include "crowd_safe_util.h"
-
-/**** Public Types ****/
-
-/* Distinct type for the pairing of two BB tags that comprises the
- * key for this hashtable. */
-typedef uint64 bb_tag_pairing_t;
-
-/**** hashtablex header template ****/
-
-/* Used by the hashtablex template to name the hashtable functions. */
-#define NAME_KEY ibp // "ibp" = "indirect branch path"
-
-/* The entry type is just key, no payload. */
-#define ENTRY_TYPE bb_tag_pairing_t
-
-/* End sentinel is <1,0>
- * No collisions in x32
- * Collision occurs in x64 on { mask32(to) == 1, (mask32(from) ^ (mask32(to) <<o 1)) == 0 }
- *     => { mask32(to) == 1, mask32(from) == 2 }
- *     (quite unlikely, though possible) */
-#define IBP_HASHTABLE_END_SENTINEL ((bb_tag_pairing_t)PC(0x100000000))
-
-/* Identifies the function to free the payload. Ours points to an
- * empty function, since we do not have any payload. */
-#define CUSTOM_FIELDS void (*free_payload_func)(void*);
-
-#define DISABLE_STAT_STUDY 1
-#define FAST_CLEAR 1
-
-/* Request template header content. */
-#define HASHTABLEX_HEADER 1
-#include "../../core/hashtablex.h" /*** invoke the template ***/
-#undef HASHTABLEX_HEADER
-
-/**** Public Fields ****/
 
 /**** Public Functions ****/
 
 void
 ibp_hash_global_init(dcontext_t *dcontext);
-
-void
-ibp_thread_init(dcontext_t *dcontext);
 
 /* Lookup an entry in the hashtable; delegates to template code.
  * Acquires and releases the table's read lock. */
@@ -107,19 +68,6 @@ notify_possibly_unexpected_ibp(dcontext_t *dcontext, crowd_safe_thread_local_t *
 void
 write_stale_uibp_reports(dcontext_t *dcontext, clock_type_t now);
 #endif
-
-/* Required by the hashtablex template. */
-int
-ibp_hash_iterate_next(dcontext_t *dcontext, ibp_table_t *htable, int iter,
-                          OUT bb_tag_pairing_t *key);
-
-/* Required by the hashtablex template. Removes from the hashtable in a safe
- * way during iteration. Returns an updated iteration index to pass to
- * ibp_hash_iterate_next().
- */
-int
-ibp_hash_iterate_remove(dcontext_t *dcontext, ibp_table_t *htable, int iter,
-                            bb_tag_pairing_t key);
 
 #ifdef MONITOR_UNEXPECTED_IBP
 void

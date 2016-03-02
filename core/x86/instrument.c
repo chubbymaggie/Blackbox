@@ -1864,7 +1864,8 @@ instrument_pre_syscall(dcontext_t *dcontext, int sysnum)
 {
     bool exec = true;
 #ifdef SECURITY_AUDIT
-    audit_syscall(dcontext, dcontext->last_fragment->tag, sysnum);
+    audit_syscall(dcontext, dcontext->last_fragment->tag, sysnum,
+                  is_at_executable_alloc_syscall(dcontext));
 #endif
 
 #ifndef SECURITY_AUDIT

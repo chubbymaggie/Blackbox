@@ -1,4 +1,5 @@
-#include "dr_instr.h"
+#include "dr_api.h"
+#include "dr_ir_instr.h"
 #include "basic_block_observer.h"
 #include "link_observer.h"
 #include "module_observer.h"
@@ -126,12 +127,6 @@ static trampoline_tracker*
 create_trampoline_tracker(app_pc tag, app_pc plt_cell);
 #endif
 
-static void
-instrument_call_site(dcontext_t *dcontext, instrlist_t *ilist, instr_t *call_instr);
-
-//static void
-//instrument_return_site(dcontext_t *dcontext, instrlist_t *ilist, instr_t *call_instr);
-
 #ifdef CROWD_SAFE_DYNAMIC_IMPORTS
 static void
 instrument_get_proc_address_entry(dcontext_t *dcontext, instrlist_t *ilist, instr_t *insert_before);
@@ -200,11 +195,10 @@ write_graph_metadata() {
 }
 
 void
-notify_basic_block_constructed(dcontext_t *dcontext,
-    app_pc tag, instrlist_t *ilist, bool has_syscall, int syscall_number)
+notify_basic_block_constructed(dcontext_t *dcontext, app_pc tag, instrlist_t *ilist,
+                               bool has_syscall, int syscall_number)
 {
     bb_hash_t hash = 0ULL;
-    bb_hash_t hash_lookup = 0ULL;
     instr_t *i;
     crowd_safe_thread_local_t *cstl = GET_CSTL(dcontext);
     instr_t *call_instr = NULL;
@@ -215,7 +209,6 @@ notify_basic_block_constructed(dcontext_t *dcontext,
     app_pc continuation_pc = NULL;
     app_pc pending_cti_target_pc = NULL;
     byte current_ordinal = 0;
-    bool is_new_tag_version = false;
     ushort bb_size = 0;
     //module_data_t *main_module = dr_get_main_module(); // cs-hack: winsock
 
@@ -239,8 +232,8 @@ notify_basic_block_constructed(dcontext_t *dcontext,
 
     {
         extern bool verify_shadow_stack;
-        if (verify_shadow_stack) {
-        }
+        if (verify_shadow_stack)
+            log_shadow_stack(dcontext, cstl->csd, " ==uknown module==");
     }
 
 #ifdef GENCODE_CHUNK_STUDY
@@ -284,9 +277,10 @@ notify_basic_block_constructed(dcontext_t *dcontext,
             module_location_t *target_module = get_module_for_address(target_address);
             instr_t *i3 = instr_get_next(i2);
 
-            if ((target_module->type == module_type_anonymous) && (i3 != NULL) && (i3->opcode == OP_jmp_ind)) {
+            if ((target_module->type == module_type_anonymous) && (i3 != NULL) && (instr_get_opcode(i3) == OP_jmp_ind)) {
+                int i2_opcode = instr_get_opcode(i2);
                 hash = hash_bits(hash, instr_length(dcontext, i), instr_get_raw_bits(i));
-                hash = hash_bits(hash, 4, (byte*)&(i2->opcode));
+                hash = hash_bits(hash, 4, (byte *) &i2_opcode);
                 hash = hash_bits(hash, instr_length(dcontext, i3), instr_get_raw_bits(i3));
 
                 CS_DET("Normalized hash for syscall hook "PX" -> "PX" is 0x%llx\n", tag, target_address, hash);
@@ -428,7 +422,7 @@ notify_basic_block_constructed(dcontext_t *dcontext,
     if (continuation_pc != NULL)
         add_pending_edge(tag, continuation_pc, current_ordinal, call_continuation_edge, location, location, false);
     if (call_instr != NULL)
-        instrument_call_site(dcontext, ilist, call_instr);
+        dr_instrument_call_site(dcontext, ilist, call_instr);
 
     if (has_syscall && (syscall_number >= 0)) {
         ASSERT(syscall_number < (SYSCALL_SINGLETON_END - SYSCALL_SINGLETON_START));
@@ -445,7 +439,7 @@ notify_trace_constructed(dcontext_t *dcontext, instrlist_t *ilist) {
     for (i = instrlist_first(ilist); i != NULL; i = next) {
         next = instr_get_next(i);
         if (instr_is_call(i) && CALL_WILL_RETURN(i))
-            instrument_call_site(dcontext, ilist, i);
+            dr_instrument_call_site(dcontext, ilist, i);
     }
 }
 
@@ -617,7 +611,13 @@ commit_basic_block(dcontext_t *dcontext, app_pc tag, bb_hash_t hash,
 
     if ((state == NULL) || is_new_tag_version) {
         if (state == NULL) {
-            bb_state_t new_state = { 0, BB_STATE_LIVE, hash, meta_type, 0, bb_size };
+            bb_state_t new_state;
+            new_state.image_instance_id = 0;
+            new_state.flags = BB_STATE_LIVE;
+            new_state.hash = hash;
+            new_state.meta_type = meta_type;
+            new_state.tag_version = 0;
+            new_state.size = bb_size;
             if (IS_EXCEPTION_RESUMING(cstl))
                 new_state.flags |= BB_STATE_EXCEPTION;
 
@@ -702,30 +702,6 @@ create_trampoline_tracker(app_pc tag, app_pc plt_cell) {
 }
 #endif
 
-static inline void
-instrument_call_site(dcontext_t *dcontext, instrlist_t *ilist, instr_t *call_instr) {
-    uint added_size = 0U;
-    instr_t *stack_add = INSTR_CREATE_lea(dcontext,
-        opnd_create_reg(REG_XSI),
-        opnd_create_base_disp(REG_NULL, REG_XSI, 1, sizeof(shadow_stack_frame_t), OPSZ_lea));
-
-    PRE(call_instr, added_size, SAVE_TO_TLS(dcontext, DR_REG_XSI, TLS_XSI_TEMP));
-    PRE(call_instr, added_size, RESTORE_FROM_TLS(dcontext, DR_REG_XSI, TLS_SHADOW_STACK_POINTER));
-
-    PRE(call_instr, added_size, INSTR_CREATE_mov_imm(dcontext,
-        OPND_CREATE_MEMPTR(REG_XSI, 0),
-        OPND_CREATE_INTPTR(instr_get_app_pc(call_instr) + instr_length(dcontext, call_instr))));
-
-    PRE(call_instr, added_size, INSTR_CREATE_mov_st(dcontext,
-        OPND_CREATE_MEMPTR(REG_XSI, sizeof(app_pc)),
-        opnd_create_reg(REG_XSP)));
-
-    PRE(call_instr, added_size, stack_add);
-
-    PRE(call_instr, added_size, SAVE_TO_TLS(dcontext, DR_REG_XSI, TLS_SHADOW_STACK_POINTER));
-    PRE(call_instr, added_size, RESTORE_FROM_TLS(dcontext, DR_REG_XSI, TLS_XSI_TEMP));
-}
-
 uint
 instrument_return_site(dcontext_t *dcontext, instrlist_t *ilist, instr_t *next, app_pc tag) {
     bool ur;
@@ -736,21 +712,10 @@ instrument_return_site(dcontext_t *dcontext, instrlist_t *ilist, instr_t *next, 
     ur = IS_BB_UNEXPECTED_RETURN(state);
     hashcode_lock_release();
 
-    if (ur) {
+    if (ur)
         return 0;
-    } else {
-        uint added_size = 0U;
-        instr_t *stack_sub = INSTR_CREATE_lea(dcontext,
-            opnd_create_reg(REG_XCX),
-            opnd_create_base_disp(REG_NULL, REG_XCX, 1, -(int)sizeof(shadow_stack_frame_t), OPSZ_lea));
-
-        // lea ecx, [TLS_SHADOW_STACK_POINTER-8] - <singleton-return-address>
-        // jecxz next
-        PRE(next, added_size, RESTORE_FROM_TLS(dcontext, DR_REG_XCX, TLS_SHADOW_STACK_POINTER));
-        PRE(next, added_size, stack_sub);
-        PRE(next, added_size, SAVE_TO_TLS(dcontext, DR_REG_XCX, TLS_SHADOW_STACK_POINTER));
-        return added_size;
-    }
+    else
+        return dr_instrument_return_site(dcontext, ilist, next, tag);
 }
 
 /*
@@ -770,24 +735,24 @@ instrument_get_proc_address_entry(dcontext_t *dcontext, instrlist_t *ilist, inst
     uint added_size = 0U;
 
     PRE(insert_before, added_size, INSTR_CREATE_push(dcontext,
-        opnd_create_reg(REG_XAX)));
+        opnd_create_reg(DR_REG_XAX)));
     PRE(insert_before, added_size, INSTR_CREATE_push(dcontext,
-        opnd_create_reg(REG_XBX)));
+        opnd_create_reg(DR_REG_XBX)));
 
     PRE(insert_before, added_size, INSTR_CREATE_mov_ld(dcontext,
-        opnd_create_reg(REG_XAX),
-        OPND_CREATE_MEMPTR(REG_XSP, 0x10)));
+        opnd_create_reg(DR_REG_XAX),
+        OPND_CREATE_MEMPTR(DR_REG_XSP, 0x10)));
 
-    PRE(insert_before, added_size, RESTORE_FROM_TLS(dcontext, REG_XBX, TLS_RESOLVED_IMPORTS));
+    PRE(insert_before, added_size, RESTORE_FROM_TLS(dcontext, DR_REG_XBX, TLS_RESOLVED_IMPORTS));
 
     PRE(insert_before, added_size, INSTR_CREATE_mov_st(dcontext,
-        OPND_CREATE_MEMPTR(REG_XBX, 0),
-        opnd_create_reg(REG_XAX)));
+        OPND_CREATE_MEMPTR(DR_REG_XBX, 0),
+        opnd_create_reg(DR_REG_XAX)));
 
     PRE(insert_before, added_size, INSTR_CREATE_pop(dcontext,
-        opnd_create_reg(REG_XBX)));
+        opnd_create_reg(DR_REG_XBX)));
     PRE(insert_before, added_size, INSTR_CREATE_pop(dcontext,
-        opnd_create_reg(REG_XAX)));
+        opnd_create_reg(DR_REG_XAX)));
 }
 
 static inline void
@@ -795,21 +760,21 @@ instrument_get_proc_address_return(dcontext_t *dcontext, instrlist_t *ilist, ins
     uint added_size = 0U;
 
     PRE(insert_before, added_size, INSTR_CREATE_push(dcontext,
-        opnd_create_reg(REG_XBX)));
+        opnd_create_reg(DR_REG_XBX)));
 
-    PRE(insert_before, added_size, RESTORE_FROM_TLS(dcontext, REG_XBX, TLS_RESOLVED_IMPORTS));
+    PRE(insert_before, added_size, RESTORE_FROM_TLS(dcontext, DR_REG_XBX, TLS_RESOLVED_IMPORTS));
 
     PRE(insert_before, added_size, INSTR_CREATE_mov_st(dcontext,
-        OPND_CREATE_MEMPTR(REG_XBX, sizeof(char*)),
-        opnd_create_reg(REG_XAX)));
+        OPND_CREATE_MEMPTR(DR_REG_XBX, sizeof(char*)),
+        opnd_create_reg(DR_REG_XAX)));
 
     PRE(insert_before, added_size, INSTR_CREATE_add(dcontext,
-        opnd_create_reg(REG_XBX),
+        opnd_create_reg(DR_REG_XBX),
         OPND_CREATE_INT8(sizeof(resolved_import_t))));
 
-    PRE(insert_before, added_size, SAVE_TO_TLS(dcontext, REG_XBX, TLS_RESOLVED_IMPORTS));
+    PRE(insert_before, added_size, SAVE_TO_TLS(dcontext, DR_REG_XBX, TLS_RESOLVED_IMPORTS));
 
     PRE(insert_before, added_size, INSTR_CREATE_pop(dcontext,
-        opnd_create_reg(REG_XBX)));
+        opnd_create_reg(DR_REG_XBX)));
 }
 #endif

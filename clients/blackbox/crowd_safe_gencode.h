@@ -77,11 +77,14 @@ append_indirect_link_notification(dcontext_t *dcontext, instrlist_t *ilist,
                                   app_pc indirect_branch_lookup_routine,
                                   instr_t *fragment_not_found);
 
+app_pc
+adjust_for_ibl_instrumentation(dcontext_t *dcontext, app_pc pc, app_pc raw_start_pc);
+
 /* Called by DR each time it emits an instruction into the code cache. This is
  * only used for debugging. When the instruction is the head of our IBP block,
  * a breakpoint is added for that PC to our generated gdb script. */
 void
-notify_emitting_instruction(instr_t *instr, cache_pc pc);
+notify_emitting_instruction(instr_t *instr, byte *pc);
 
 /* Called by DR when gencode is complete. This module keeps track of the
  * gencode phase and prints warnings if certain operations occur outside

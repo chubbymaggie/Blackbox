@@ -1,17 +1,12 @@
-#include "indirect_link_observer.h"
+#include "dr_api.h"
 #include <string.h>
-//#include "../../core/x86/arch.h"
-//#include "../../core/x86/instr.h"
-//#include "../../core/x86/instrument.h"
-//#include "../../core/x86/instr_create.h"
-//#include "../../core/heap.h"
-//#include "../../core/fragment.h"
 #include "crowd_safe_util.h"
 #include "link_observer.h"
 #include "crowd_safe_trace.h"
 #include "basic_block_hashtable.h"
 #include "execution_monitor.h"
 #include "indirect_link_hashtable.h"
+#include "indirect_link_observer.h"
 
 #ifdef WINDOWS
 # include "winbase.h"
@@ -56,8 +51,7 @@ indirect_link_observer_thread_init(dcontext_t *dcontext) {
     csd->resolved_imports += 1;
 #endif
 
-    cstl->shadow_stack_base = HEAP_ARRAY_ALLOC(dcontext, shadow_stack_frame_t, SHADOW_STACK_SIZE,
-                                               ACCT_IBLTABLE, UNPROTECTED);
+    cstl->shadow_stack_base = dr_global_alloc(sizeof(shadow_stack_frame_t) * SHADOW_STACK_SIZE);
     CS_DET("Allocated shadow stack at "PX"\n", csd->shadow_stack_base);
     csd->shadow_stack = cstl->shadow_stack_base;
     csd->shadow_stack->base_pointer = (app_pc)SHADOW_STACK_SENTINEL;
@@ -76,10 +70,11 @@ void
 indirect_link_hashtable_insert(dcontext_t *dcontext) {
     local_security_audit_state_t *csd = GET_CS_DATA(dcontext);
     ibp_metadata_t *ibp_data = &csd->ibp_data;
-    crowd_safe_thread_local_t *cstl = csd->crowd_safe_thread_local;
-    DEBUG_DECLARE(bb_state_t *from_state = NULL;)
-    DEBUG_DECLARE(bb_state_t *to_state = NULL;)
+    crowd_safe_thread_local_t *cstl = csd->security_audit_thread_local;
     bool add;
+#ifdef DEBUG
+    bb_state_t *from_state = NULL, *to_state = NULL;
+#endif
     CROWD_SAFE_DEBUG_HOOK_VOID(__FUNCTION__);
 
     ASSERT(!IBP_STACK_IS_PENDING(ibp_data));
@@ -139,12 +134,12 @@ indirect_link_hashtable_insert(dcontext_t *dcontext) {
     }
 #endif
     add = (ibp_hash_lookup(dcontext, ibp_data->ibp_from_tag, ibp_data->ibp_to_tag) == 0ULL);
-    DODEBUG({
+#ifdef DEBUG
         if (!(is_monitor_active() || add) && ((to_state == NULL) || !IS_BB_LIVE(to_state) || !IS_BB_COMMITTED(to_state))) {
             CS_DET("IBP table skipped add "PX" - "PX" when the 'to' state was %s\n", ibp_data->ibp_from_tag,
                 ibp_data->ibp_to_tag, (to_state == NULL) ? "null" : IS_BB_LIVE(to_state) ? "not committed" : "out of scope");
         }
-    });
+#endif
 
     if (add) {
         bool is_return = false, is_expected_return = false;
@@ -152,11 +147,12 @@ indirect_link_hashtable_insert(dcontext_t *dcontext) {
         if (IBP_IS_UNEXPECTED_RETURN(ibp_data)) {
             shadow_stack_frame_t *top;
             shadow_stack_frame_t *walk;
+            app_pc xsp = dcontext_get_app_stack_pointer(dcontext);
 
             is_return = true;
 
             // IBL shadow stack unwind is timid in some cases--unwind all the way down
-            while ((SHADOW_FRAME(csd)->base_pointer < XSP(dcontext) ||
+            while ((SHADOW_FRAME(csd)->base_pointer < xsp ||
                     SHADOW_FRAME(csd)->return_address == int2p(SHADOW_STACK_CALLBACK_TAG)) &&
                    (SHADOW_FRAME(csd)->base_pointer != (app_pc)SHADOW_STACK_SENTINEL) &&
                    (ibp_data->ibp_to_tag != SHADOW_FRAME(csd)->return_address))
@@ -174,8 +170,10 @@ indirect_link_hashtable_insert(dcontext_t *dcontext) {
             }
 
             if (walk == csd->shadow_stack_miss_frame) {
+                app_pc next_tag = dcontext_get_next_tag(dcontext);
+
                 for (walk = top; walk < csd->shadow_stack_miss_frame; walk++) {
-                    if (walk->return_address == dcontext->next_tag) {
+                    if (walk->return_address == next_tag) {
                         break;
                     }
                 }
@@ -289,7 +287,6 @@ push_nested_shadow_stack(dcontext_t *dcontext) {
 void
 pop_nested_shadow_stack(dcontext_t *dcontext) {
     local_security_audit_state_t *csd = GET_CS_DATA(dcontext);
-    crowd_safe_thread_local_t *cstl = csd->crowd_safe_thread_local;
     CROWD_SAFE_DEBUG_HOOK_VOID(__FUNCTION__);
 
     while (csd->shadow_stack->base_pointer != (app_pc)SHADOW_STACK_SENTINEL)
@@ -305,7 +302,6 @@ pop_nested_shadow_stack(dcontext_t *dcontext) {
 void
 pop_shadow_stack_frame(dcontext_t *dcontext) {
     local_security_audit_state_t *csd = GET_CS_DATA(dcontext);
-    crowd_safe_thread_local_t *cstl = csd->crowd_safe_thread_local;
     CROWD_SAFE_DEBUG_HOOK_VOID(__FUNCTION__);
 
     csd->shadow_stack--;
@@ -317,8 +313,8 @@ indirect_link_observer_thread_exit(dcontext_t *dcontext) {
     crowd_safe_thread_local_t *cstl = GET_CSTL(dcontext);
     CROWD_SAFE_DEBUG_HOOK_VOID(__FUNCTION__);
 
-    HEAP_ARRAY_FREE(dcontext, cstl->shadow_stack_base, shadow_stack_frame_t, SHADOW_STACK_SIZE,
-                    ACCT_IBLTABLE, UNPROTECTED);
+    dr_global_free(cstl->shadow_stack_base,
+                   sizeof(shadow_stack_frame_t) * SHADOW_STACK_SIZE);
 }
 
 void
@@ -338,7 +334,7 @@ report_unexpected_return(dcontext_t *dcontext) {
     shadow_stack_frame_t *f = csd->shadow_stack_miss_frame;
     module_location_t *from_module = get_module_for_address(ibp_data->ibp_from_tag);
     module_location_t *to_module = get_module_for_address(ibp_data->ibp_to_tag);
-    module_location_t *miss_module = get_module_for_address(RETURN_ADDRESS(f));
+    //module_location_t *miss_module = get_module_for_address(RETURN_ADDRESS(f));
     char *scope_name;
 #ifdef WINDOWS
     char debug_buffer[1024];
@@ -350,11 +346,13 @@ report_unexpected_return(dcontext_t *dcontext) {
     else
         scope_name = "Intra-module";
 
+    /*
     CS_DET("%s unexpected return from %s("PX") to %s("PX"), missing %s("PX")\n",
         scope_name,
         from_module->module_name, MODULAR_PC(from_module, ibp_data->ibp_from_tag),
         to_module->module_name, MODULAR_PC(to_module, ibp_data->ibp_to_tag),
         miss_module->module_name, MODULAR_PC(miss_module, RETURN_ADDRESS(f)));
+    */
 
 #ifdef WINDOWS
     if (CROWD_SAFE_WDB_SCRIPT(WDB_UR_SYMBOLS)) {

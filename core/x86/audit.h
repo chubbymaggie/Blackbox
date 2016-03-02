@@ -53,6 +53,9 @@ do { \
         dr_fprintf(*audit_callbacks->audit_log_file, format, __VA_ARGS__); \
 } while (0)
 
+/* for the pairing of two BB tags */
+typedef uint64 bb_tag_pairing_t;
+
 #endif /* SECURITY_AUDIT */
 
 #ifdef API_EXPORT_ONLY
@@ -76,6 +79,25 @@ typedef fragment_t dr_fragment_t; /* not API exported */
 
 #ifdef SECURITY_AUDIT
 
+#ifdef X64
+# define SHADOW_STACK_SENTINEL 0ULL
+# define SHADOW_STACK_EMPTY_TAG 0xf0f0f0f0f0f0f0f0ULL
+# define SHADOW_STACK_CALLBACK_TAG 0xc0c0c0c0c0c0c0c0ULL
+#else
+# define SHADOW_STACK_SENTINEL 0UL
+# define SHADOW_STACK_EMPTY_TAG 0xf0f0f0f0UL
+# define SHADOW_STACK_CALLBACK_TAG 0xc0c0c0c0UL
+#endif
+
+// cs-todo: read app max from PE optional header SizeOfStackReserve @72
+#define SHADOW_STACK_SIZE 0x200 // in frames
+
+#define SHADOW_FRAME(sas) (sas->shadow_stack-1)
+#define SHADOW_PEEK(sas, n) (sas->shadow_stack-(n+1))
+#define IS_CALLBACK_FRAME(sas) \
+    ((SHADOW_FRAME(sas)->base_pointer == (app_pc)SHADOW_STACK_SENTINEL) && \
+     (SHADOW_FRAME(sas)->return_address == (app_pc)SHADOW_STACK_CALLBACK_TAG))
+
 /****************************************************************************
  * SECURITY AUDITING SUPPORT
  */
@@ -87,7 +109,6 @@ typedef struct _audit_callbacks_t {
     void (*audit_exit)();
     void (*audit_init_log)(bool is_fork, bool is_wow64_process);
     file_t (*audit_create_logfile)();
-    void (*audit_close_logfile)();
     void (*audit_dynamo_model_initialized)();
     void (*audit_thread_init)(dcontext_t *dcontext);
     void (*audit_thread_exit)(dcontext_t *dcontext);
@@ -96,12 +117,13 @@ typedef struct _audit_callbacks_t {
                                       int line, const char *expr);
     void (*audit_dispatch)(dcontext_t *dcontext);
     void (*audit_fcache_enter)(dcontext_t *dcontext);
-    void (*audit_fragment_indirect_link)(dcontext_t *dcontext);
     void (*audit_fragment_direct_link)(dcontext_t *dcontext, app_pc from,
                                        app_pc to, byte ordinal);
-    void (*audit_syscall)(dcontext_t *dcontext, app_pc tag, int syscall_number);
+    void (*audit_fragment_indirect_link)(dcontext_t *dcontext);
+    void (*audit_syscall)(dcontext_t *dcontext, app_pc tag,
+                          int sysnum, bool is_executable_alloc);
     bool (*audit_filter_syscall)(int sysnum);
-    void (*audit_bb_link_complete)(dcontext_t *dcontext, dr_fragment_t *f);
+    void (*audit_bb_link_complete)(dcontext_t *dcontext, app_pc tag);
     void (*audit_translation)(dcontext_t *dcontext, app_pc start_pc, instrlist_t *ilist,
                               int sysnum);
     void (*audit_fragment_remove)(dcontext_t *dcontext, app_pc tag);
@@ -136,7 +158,7 @@ typedef struct _audit_callbacks_t {
     void (*audit_intercept)(app_pc start, app_pc end);
     void (*audit_callback_context_switch)(dcontext_t *dcontext, bool is_return);
     void (*audit_nested_shadow_stack)(dcontext_t *dcontext, bool push);
-    void (*audit_nt_continue)();
+    void (*audit_nt_continue)(dcontext_t *dcontext);
     void (*audit_socket_handle)(dcontext_t *dcontext, HANDLE handle, bool created);
     void (*audit_device_io_control)(dcontext_t *dcontext, uint result, HANDLE socket,
                                     HANDLE event, IO_STATUS_BLOCK *status_block,
@@ -178,6 +200,10 @@ ibp_metadata_t *
 dcontext_get_ibp_data(dcontext_t *dcontext);
 
 DR_API
+app_pc
+dcontext_get_app_stack_pointer(dcontext_t *dcontext);
+
+DR_API
 local_security_audit_state_t *
 dcontext_get_audit_state(dcontext_t *dcontext);
 
@@ -214,6 +240,57 @@ DR_API
 void
 dr_log_last_exit(dcontext_t *dcontext, app_pc tag, const char *prefix, uint loglevel);
 
+DR_API
+void
+dr_instrument_call_site(dcontext_t *dcontext, instrlist_t *ilist, instr_t *call_instr);
+
+DR_API
+uint
+dr_instrument_return_site(dcontext_t *dcontext, instrlist_t *ilist, instr_t *next, app_pc tag);
+
+DR_API
+bb_tag_pairing_t
+dr_ibp_lookup(dcontext_t *dcontext, bb_tag_pairing_t key);
+
+DR_API
+bb_tag_pairing_t *
+dr_ibp_lookup_for_removal(bb_tag_pairing_t key, uint *index);
+
+DR_API
+void
+dr_ibp_add(dcontext_t *dcontext, bb_tag_pairing_t value);
+
+DR_API
+bool
+dr_ibp_add_new(dcontext_t *dcontext, bb_tag_pairing_t possibly_new);
+
+DR_API
+bool
+dr_ibp_remove(bb_tag_pairing_t value);
+
+DR_API
+bool
+dr_ibp_remove_helper(uint hindex, bb_tag_pairing_t *previous);
+
+DR_API
+void
+dr_ibp_clear(dcontext_t *dcontext);
+
+/****************************************************************************
+ * CORE INTEGRATION
+ */
+
+void
+audit_init();
+
+void
+audit_exit();
+
+void
+audit_thread_init(dcontext_t *dcontext);
+
+void
+audit_thread_exit(dcontext_t *dcontext);
 
 /****************************************************************************
  * SECURITY AUDITING INTERNAL_CALLBACKS
@@ -222,7 +299,7 @@ dr_log_last_exit(dcontext_t *dcontext, app_pc tag, const char *prefix, uint logl
 /* global process state */
 
 inline void
-audit_init(dcontext_t *dcontext, bool is_fork)
+audit_client_init(dcontext_t *dcontext, bool is_fork)
 {
     if (audit_callbacks == NULL)
         return;
@@ -231,7 +308,7 @@ audit_init(dcontext_t *dcontext, bool is_fork)
 }
 
 inline void
-audit_exit()
+audit_client_exit()
 {
     if (audit_callbacks == NULL)
         return;
@@ -258,15 +335,6 @@ audit_create_logfile()
 }
 
 inline void
-audit_close_logfile()
-{
-    if (audit_callbacks == NULL)
-        return;
-
-    audit_callbacks->audit_close_logfile();
-}
-
-inline void
 audit_dynamo_model_initialized()
 {
     if (audit_callbacks == NULL)
@@ -276,7 +344,7 @@ audit_dynamo_model_initialized()
 }
 
 inline void
-audit_thread_init(dcontext_t *dcontext)
+audit_client_thread_init(dcontext_t *dcontext)
 {
     if (audit_callbacks == NULL)
         return;
@@ -285,7 +353,7 @@ audit_thread_init(dcontext_t *dcontext)
 }
 
 inline void
-audit_thread_exit(dcontext_t *dcontext)
+audit_client_thread_exit(dcontext_t *dcontext)
 {
     if (audit_callbacks == NULL)
         return;
@@ -353,12 +421,12 @@ audit_fragment_indirect_link(dcontext_t *dcontext)
 }
 
 inline void
-audit_syscall(dcontext_t *dcontext, app_pc tag, int syscall_number)
+audit_syscall(dcontext_t *dcontext, app_pc tag, int sysnum, bool is_executable_alloc)
 {
     if (audit_callbacks == NULL)
         return;
 
-    audit_callbacks->audit_syscall(dcontext, tag, syscall_number);
+    audit_callbacks->audit_syscall(dcontext, tag, sysnum, is_executable_alloc);
 }
 
 inline bool
@@ -371,12 +439,12 @@ audit_filter_syscall(int sysnum)
 }
 
 inline void
-audit_bb_link_complete(dcontext_t *dcontext, dr_fragment_t *f)
+audit_bb_link_complete(dcontext_t *dcontext, app_pc tag)
 {
     if (audit_callbacks == NULL)
         return;
 
-    audit_callbacks->audit_bb_link_complete(dcontext, f);
+    audit_callbacks->audit_bb_link_complete(dcontext, tag);
 }
 
 /* fragments */
@@ -590,12 +658,12 @@ audit_nested_shadow_stack(dcontext_t *dcontext, bool push)
 }
 
 inline void
-audit_nt_continue()
+audit_nt_continue(dcontext_t *dcontext)
 {
     if (audit_callbacks == NULL)
         return;
 
-    audit_callbacks->audit_nt_continue();
+    audit_callbacks->audit_nt_continue(dcontext);
 }
 
 /* network */

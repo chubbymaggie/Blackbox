@@ -128,31 +128,18 @@ typedef uint clock_type_t;
 // MASK_HIGH is not valid in x32
 #endif
 
-#ifdef X64
-# define XSP(dcontext) (app_pc)dcontext->upcontext_ptr->mcontext.rsp
-# define XIP(dcontext) (app_pc)dcontext->upcontext_ptr->mcontext.rip
-#else
-# define XSP(dcontext) (app_pc)dcontext->upcontext_ptr->mcontext.esp
-# define XIP(dcontext) (app_pc)dcontext->upcontext_ptr->mcontext.eip
-#endif
-
-#ifdef X64
-# define XBP(dcontext) (app_pc)dcontext->upcontext_ptr->mcontext.rbp
-#else
-# define XBP(dcontext) (app_pc)dcontext->upcontext_ptr->mcontext.ebp
-#endif
-
 #define CROWD_SAFE_MONITOR_OPTION 1
 #define CROWD_SAFE_ALARM_OPTION 2
 #define CROWD_SAFE_NETWORK_MONITOR_OPTION 4
 #define CROWD_SAFE_META_ON_CLOCK_OPTION 8
 #define CROWD_SAFE_RECORD_XHASH_OPTION 0x10
+#define CROWD_SAFE_DEBUG_SCRIPT_OPTION 0x20
 #define CROWD_SAFE_MONITOR() is_crowd_safe_option_active(CROWD_SAFE_MONITOR_OPTION)
 #define CROWD_SAFE_ALARM() is_crowd_safe_option_active(CROWD_SAFE_ALARM_OPTION)
 #define CROWD_SAFE_NETWORK_MONITOR() is_crowd_safe_option_active(CROWD_SAFE_NETWORK_MONITOR_OPTION)
 #define CROWD_SAFE_META_ON_CLOCK() is_crowd_safe_option_active(CROWD_SAFE_META_ON_CLOCK_OPTION)
 #define CROWD_SAFE_RECORD_XHASH() is_crowd_safe_option_active(CROWD_SAFE_RECORD_XHASH_OPTION)
-#define CROWD_SAFE_MODULE_LOG() is_crowd_safe_option_active(CROWD_SAFE_NETWORK_MONITOR_OPTION)
+#define CROWD_SAFE_DEBUG_SCRIPT() is_crowd_safe_option_active(CROWD_SAFE_DEBUG_SCRIPT_OPTION)
 
 // CS-TODO: verify correctness of big/little endianness
 #ifndef __BYTE_ORDER
@@ -196,7 +183,7 @@ typedef uint clock_type_t;
 #define WDB_ANY ~0U
 #define WDB_UR_SYMBOLS 1U
 #define WDB_MODE WDB_UR_SYMBOLS
-#define CROWD_SAFE_WDB_SCRIPT(mode) (((mode & WDB_MODE) > 0) && DYNAMO_OPTION(wdb_script))
+#define CROWD_SAFE_WDB_SCRIPT(mode) (((mode & WDB_MODE) > 0) && CROWD_SAFE_DEBUG_SCRIPT())
 
 #ifdef X64
 # define ALL_LOWER_BITS 0xFFFFFFFFFULL
@@ -230,7 +217,7 @@ typedef uint clock_type_t;
     ((uint)ibp_data->ibp_from_tag > 1U) && (ibp_data->ibp_to_tag == tag)
 
 #define GET_CS_DATA(dcontext) (dcontext_get_audit_state(dcontext))
-#define GET_IBP_METADATA(dcontext) (dcontext_get_audit_state(dcontext)->ibp_data)
+#define GET_IBP_METADATA(dcontext) (&dcontext_get_audit_state(dcontext)->ibp_data)
 
 #define ANONYMOUS_MODULE_NAME "|anonymous|"
 #define UNKNOWN_MODULE_NAME "|unknown|"
@@ -272,11 +259,15 @@ typedef uint clock_type_t;
 #define SET_BLACK_BOX_THRASH(cstl) (cstl->bb_meta.is_black_box_thrash = true)
 #define SET_EXCEPTION_RESUMING(cstl) (cstl->bb_meta.is_exception_resuming = true)
 
-#define GET_CSTL(dcontext) (dcontext_get_audit_state(dcontext)->crowd_safe_thread_local)
+#define GET_CSTL(dcontext) (dcontext_get_audit_state(dcontext)->security_audit_thread_local)
 #define SET_CSTL(dcontext, cstl) \
 do { \
     GET_CSTL(dcontext) = cstl; \
 } while (0);
+
+#define GET_SHADOW_STACK_BASE(sas) \
+    (((crowd_safe_thread_local_t *)((sas)->security_audit_thread_local))->shadow_stack_base)
+#define SHADOW_STACK_FRAME_NUMBER(sas, frame) (frame - GET_SHADOW_STACK_BASE(sas))
 
 #if (CROWD_SAFE_LOG_LEVEL > CS_LOG_NONE)
 # define CROWD_SAFE_LOG_ACTIVE 1
@@ -337,6 +328,7 @@ do { \
 # define CS_DET(...)
 #endif
 
+#define CROWD_SAFE_DATA 1
 #ifdef CROWD_SAFE_DATA
 #  define CROWD_SAFE_DEBUG_HOOK_QUIET(function, value)
 #  define CROWD_SAFE_DEBUG_HOOK_QUIET_VOID(function)
@@ -358,6 +350,8 @@ do { \
 #   define CROWD_SAFE_DEBUG_HOOK_VOID(function) return
 # endif
 #endif
+
+#define MAX_APP_STACK_FRAMES 0x20
 
 #ifdef CROWD_SAFE_TRACK_MEMORY
 # define CS_ALLOC(size) tracked_memory_alloc(size, __FILE__, __FUNCTION__, __LINE__)
@@ -547,6 +541,14 @@ struct module_location_t {
 #endif
 } unknown_module, system_module;
 
+typedef struct _stack_frame_t {
+    union {
+        app_pc return_address;
+        app_pc writer_tag;
+    };
+    module_location_t *module;
+} stack_frame_t;
+
 typedef struct basic_block_meta_t basic_block_meta_t;
 struct basic_block_meta_t { // maintained for disappearing anonymous 'from' nodes in direct edges
     app_pc building_tag;
@@ -703,6 +705,9 @@ report_syscall_frequency(int sysnum);
 
 uint
 current_thread_id();
+
+uint
+get_app_stacktrace(dcontext_t *dcontext, uint max_frames, stack_frame_t *frames);
 
 ushort
 observe_call_stack(dcontext_t *dcontext);

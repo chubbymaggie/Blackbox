@@ -130,14 +130,6 @@ struct shadow_page_t {
 static shadow_page_table_t *shadow_page_table;
 #define DEFAULT_SHADOW_PAGE_OWNER (module_location_t*)int2p(1)
 
-typedef struct _stack_frame_t {
-    union {
-        app_pc return_address;
-        app_pc writer_tag;
-    };
-    module_location_t *module;
-} stack_frame_t;
-
 typedef struct _executable_write_t {
     app_pc start;
     app_pc end;
@@ -273,9 +265,6 @@ add_shadow_page(dcontext_t *dcontext, app_pc base, bool safe_to_read);
 
 static void
 remove_shadow_page(dcontext_t *dcontext, app_pc base);
-
-static uint
-get_app_stacktrace(dr_mcontext_t *mc, uint max_frames, stack_frame_t *frames);
 
 static void
 copy_appstack(executable_write_t *dst, executable_write_t *src);
@@ -1127,20 +1116,14 @@ destroy_module_observer() {
 
 /**** Private Functions ****/
 
-#define MAX_APP_STACK_FRAMES 0x20
-
 static inline void
 add_shadow_page(dcontext_t *dcontext, app_pc base, bool safe_to_read) {
-    dr_mcontext_t mc
     drvector_t *pending_edges = NULL;
     shadow_page_t *page = NULL;
     stack_frame_t appstack[MAX_APP_STACK_FRAMES];
-    uint f, frame_count;
+    uint f, frame_count = get_app_stacktrace(dcontext, MAX_APP_STACK_FRAMES, appstack);
 
-    mc.size = sizeof(mc);
-    mc.flags = DR_MC_INTEGER;
-
-    if (dr_get_mcontext(dcontext, &mc)) {
+    if (frame_count > 0) {
         module_location_t *last_module = NULL;
 
         MODULE_LOCK
@@ -1162,7 +1145,6 @@ add_shadow_page(dcontext_t *dcontext, app_pc base, bool safe_to_read) {
             CS_DET("DMP| Adding shadow page "PX"; stack modules:\n", base);
         }
 
-        frame_count = get_app_stacktrace(mc, MAX_APP_STACK_FRAMES, appstack);
         for (f = 0; f < frame_count; f++) {
             pending_gencode_edge_t *pending_edge = CS_ALLOC(sizeof(pending_gencode_edge_t));
 
@@ -1221,30 +1203,6 @@ remove_shadow_page(dcontext_t *dcontext, app_pc base) {
     MODULE_UNLOCK
 }
 
-static uint
-get_app_stacktrace(priv_mcontext_t *mc, uint max_frames, stack_frame_t *frames)
-{
-    ptr_uint_t *pc = (ptr_uint_t *) (app_pc) mc->xbp;
-    module_location_t *frame_module;
-    uint f = 0;
-
-    while (pc != NULL && dr_is_safe_to_read((byte *)pc, 8)) {
-        frames[f].return_address = (app_pc) *(pc+1); // N.B.: using `frames[f]` as scratch at first
-        if (frames[f].return_address != 0) {
-            frame_module = get_module_for_address(frames[f].return_address);
-            // take the top frame for each sequence of consecutive frames in the same module
-            if (f == 0 || frame_module != frames[f-1].module) {
-                frames[f].module = frame_module;
-                if (++f == max_frames)
-                    break;
-            }
-        }
-        pc = (ptr_uint_t *) *pc;
-    }
-
-    return f;
-}
-
 static void
 copy_appstack(executable_write_t *dst, executable_write_t *src)
 {
@@ -1258,14 +1216,10 @@ copy_appstack(executable_write_t *dst, executable_write_t *src)
 static void
 take_write_stack_snapshot(dcontext_t *dcontext, executable_write_t *write, app_pc writer_tag)
 {
-    dr_mcontext_t mc;
     stack_frame_t appstack[MAX_APP_STACK_FRAMES];
     uint i, frame_count;
 
-    mc.size = sizeof(mc);
-    mc.flags = DR_MC_INTEGER;
-    dr_get_mcontext(dcontext, &mc);
-    frame_count = MAX(1, get_app_stacktrace(&mc, MAX_APP_STACK_FRAMES, appstack));
+    frame_count = MAX(1, get_app_stacktrace(dcontext, MAX_APP_STACK_FRAMES, appstack));
 
     write->frame_count = frame_count;
     write->frames = CS_ALLOC(sizeof(stack_frame_t) * write->frame_count);

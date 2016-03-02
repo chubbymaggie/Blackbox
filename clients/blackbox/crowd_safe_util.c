@@ -148,10 +148,15 @@ static memory_tracker_t *memory_tracker;
 #define VECTOR_ENTRY_INLINE 1
 #include "../drcontainers/drvectorx.h"
 
+#define CALL_STACK_NEW_BYTE_SIZE(frame_count) \
+    (sizeof(stack_frame_t) + ((frame_count - 1) * sizeof(app_pc)))
+#define CALL_STACK_BYTE_SIZE(stack) CALL_STACK_NEW_BYTE_SIZE(stack->frame_count)
+
 typedef struct _call_stack_t {
     ushort id;
     uint64 hash;
-    tag_vector_t tags;
+    ushort frame_count;
+    app_pc frames[1];
 } call_stack_t;
 
 /* Template instantiation: call_stack_table_t */
@@ -164,7 +169,6 @@ typedef struct _call_stack_t {
 #define HASHTABLE_KEY_TYPE uint64
 #include "../drcontainers/drhashtablex.h"
 
-static tag_vector_t *temp_tags;
 static call_stack_table_t *call_stack_table;
 static void *call_stack_mutex;
 
@@ -397,9 +401,6 @@ init_crowd_safe_util(bool is_fork) {
             NULL, /* no custom hashing */
             NULL);
 
-        temp_tags = CS_ALLOC(sizeof(tag_vector_t));
-        tag_vector_init(temp_tags, 0x20, false, NULL);
-
 #ifdef UNIX
         plt_stubs = (hashtable_t*)CS_ALLOC(sizeof(hashtable_t));
         hashtable_init_ex(
@@ -615,52 +616,61 @@ current_thread_id() {
 #endif
 }
 
-ushort
-observe_call_stack(dcontext_t *dcontext)
+uint
+get_app_stacktrace(dcontext_t *dcontext, uint max_frames, stack_frame_t *frames)
 {
+    uint f = 0;
     dr_mcontext_t mc;
-    ptr_uint_t *next_pc, *pc;
-    uint frame_count = 0;
-    app_pc return_address;
-    uint64 hash = 0ULL;
-    call_stack_t *matching_stack;
 
     mc.size = sizeof(mc);
     mc.flags = DR_MC_INTEGER;
-    dr_get_mcontext(dcontext, &mc);
-    pc = (ptr_uint_t *) (app_pc) mc.xbp;
+    if (dr_get_mcontext(dcontext, &mc)) {
+        module_location_t *frame_module;
+        ptr_uint_t *pc = (ptr_uint_t *) (app_pc) mc.xbp;
+
+        while (pc != NULL && dr_is_safe_to_read((byte *)pc, 8)) {
+            frames[f].return_address = (app_pc) *(pc+1); // N.B.: using `frames[f]` as scratch at first
+            if (frames[f].return_address != 0) {
+                frame_module = get_module_for_address(frames[f].return_address);
+                // take the top frame for each sequence of consecutive frames in the same module
+                if (f == 0 || frame_module != frames[f-1].module) {
+                    frames[f].module = frame_module;
+                    if (++f == max_frames)
+                        break;
+                }
+            }
+            pc = (ptr_uint_t *) *pc;
+        }
+    }
+    return f;
+}
+
+ushort
+observe_call_stack(dcontext_t *dcontext)
+{
+    uint64 hash = 0ULL;
+    call_stack_t *matching_stack;
+    stack_frame_t appstack[MAX_APP_STACK_FRAMES];
+    uint f, frame_count = get_app_stacktrace(dcontext, MAX_APP_STACK_FRAMES, appstack);
 
     CALL_STACK_LOCK;
-    while (pc != NULL && dr_is_safe_to_read((byte *)pc, 8)) {
-        frame_count++;
-        next_pc = (ptr_uint_t *) *pc;
-        if (pc != next_pc) {
-            return_address = (app_pc) *(pc + 1);
-            if (return_address == 0)
-                break;
-
-            tag_vector_append(temp_tags, return_address);
-            hash = hash ^ (hash << 5) ^ (uint) pc;
-        }
-        if (frame_count > 100)
-            break;
-        pc = next_pc;
-    }
+    for (f = 0; f < frame_count; f++)
+        hash = hash ^ (hash << 5) ^ (uint) appstack[f].return_address;
 
     matching_stack = (call_stack_t *) call_stack_table_lookup(call_stack_table, hash);
     if (matching_stack == NULL) {
-        ushort id = write_call_stack(temp_tags->array, temp_tags->entries);
+        ushort id = write_call_stack(appstack, frame_count);
+
         CS_DET("Created new call stack for hash 0x%llx\n", hash);
 
-        matching_stack = CS_ALLOC(sizeof(call_stack_t));
+        matching_stack = CS_ALLOC(CALL_STACK_NEW_BYTE_SIZE(frame_count));
         matching_stack->id = id;
         matching_stack->hash = hash;
-        matching_stack->tags = *temp_tags; // fieldwise copy
-        tag_vector_init(temp_tags, 0x20, false, NULL); // regenerate temp_tags
+        matching_stack->frame_count = (ushort) frame_count;
+        memcpy(matching_stack->frames, appstack, sizeof(app_pc) * frame_count);
         call_stack_table_add(call_stack_table, hash, matching_stack);
     } else {
         CS_DET("Found call stack for hash 0x%llx\n", hash);
-        tag_vector_clear(temp_tags);
     }
     CALL_STACK_UNLOCK;
 
@@ -860,7 +870,8 @@ return_address_iterator_next(return_address_iterator_t *i, app_pc *out_addr, app
             while (i->bp_walk < i->bp_next) {
                 next_addr = int2p(*i->bp_walk);
                 i->bp_walk++;
-                if (next_addr > int2p(0x40000) && is_executable_address_locked(next_addr)) {
+                ASSERT(false); // wire this: is_executable_address_locked
+                if (next_addr > int2p(0x40000) && false) { //is_executable_address_locked(next_addr)) {
                     *out_addr = next_addr;
                     i->is_in_ebp_chain = false;
                     has_next = true;
@@ -918,7 +929,7 @@ log_shadow_stack(dcontext_t *dcontext, local_security_audit_state_t *csd, const 
         }
 
         dr_mutex_lock(shadow_stack_missing_frame_lock);
-        executable_areas_read_lock();
+        ASSERT(false); // wire this: executable_areas_read_lock();
         while (return_address_iterator_next(cstl->stack_walk, &app_return_address, frame->return_address)) {
             if (error_frame < 0) {
                 CS_ERR("Shadow stack underflow!\n");
@@ -969,7 +980,7 @@ log_shadow_stack(dcontext_t *dcontext, local_security_audit_state_t *csd, const 
         }
 #endif
 
-        executable_areas_read_unlock();
+        ASSERT(false); // wire this: executable_areas_read_unlock();
         dr_mutex_unlock(shadow_stack_missing_frame_lock);
 
         if (is_correct) {
@@ -1226,7 +1237,7 @@ load_environment_dir(OUT char *dir, const char *name, const char *default_value)
 
 static void
 init_application_short_name() {
-    char *slash, *application_name = get_application_name();
+    char *slash, *application_name = dr_get_application_name();
 
     while (true) {
         slash = strstr(application_name, FILE_SEPARATOR_STRING);
@@ -1263,6 +1274,5 @@ memory_tracker_alloc(size_t size) {
 static void
 call_stack_delete(call_stack_t *call_stack)
 {
-    tag_vector_delete(&call_stack->tags);
-    dr_global_free(call_stack, sizeof(call_stack_t));
+    dr_global_free(call_stack, CALL_STACK_BYTE_SIZE(call_stack));
 }

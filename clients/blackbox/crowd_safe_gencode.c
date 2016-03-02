@@ -416,7 +416,7 @@ adjust_for_ibl_instrumentation(dcontext_t *dcontext, app_pc pc, app_pc raw_start
 }
 
 void
-notify_emitting_instruction(instr_t *instr, cache_pc pc) {
+notify_emitting_instruction(instr_t *instr, byte *pc) {
     CROWD_SAFE_DEBUG_HOOK_QUIET_VOID(__FUNCTION__);
 
     if (!*gencode_in_progress) return;
