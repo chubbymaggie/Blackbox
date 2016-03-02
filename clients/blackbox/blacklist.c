@@ -503,9 +503,7 @@ init_blacklist() {
     blacklist_node_type_list = CS_ALLOC(sizeof(drvector_t));
     drvector_init(blacklist_node_type_list, 0x10, false, free_blacklist_node_type);
 
-    blacklist_path[0] = '\0';
-    strcat(blacklist_path, monitor_dataset_dir);
-    strcat(blacklist_path, BLACKLIST_FILENAME);
+    dr_snprintf(blacklist_path, 256, "%s%s", monitor_dataset_dir, BLACKLIST_FILENAME);
     blacklist_file = dr_open_file(blacklist_path, DR_FILE_READ);
     if (blacklist_file == INVALID_FILE) {
         CS_LOG("BL| Blacklist is not enabled (no configuration file at %s)\n", blacklist_path);

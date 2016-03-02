@@ -406,7 +406,8 @@ static audit_callbacks_t callbacks = {
 
 uint crowd_safe_options;
 uint bb_analysis_level;
-char monitor_dataset_dir[MAX_MONITOR_DATASET_DIR_LEN] = {0};
+static char monitor_dataset_buf[MAX_MONITOR_DATASET_DIR_LEN] = {0};
+char *monitor_dataset_dir = monitor_dataset_buf;
 uint64 process_start_time;
 
 static inline bool
@@ -446,7 +447,7 @@ dr_init(client_id_t id)
 
     if (options != NULL && strstr("-dataset_home", options) == 0) {
         options += strlen("-dataset_home ");
-        strcpy(monitor_dataset_dir, options);
+        strcpy(monitor_dataset_buf, options);
     }
 
     /*

@@ -552,10 +552,15 @@ dynamorio_app_init(void)
          * wants it later.
          */
         loader_init();
-#ifdef CLIENT_INTERFACE
-        instrument_init();
-#endif
 #ifdef SECURITY_AUDIT
+# ifdef CLIENT_INTERFACE
+        /* The SECURITY_AUDIT build supports instrumentation of IBL gencode, so
+         * the client must be loaded prior to IBL gencode in arch_init(). Builds
+         * not providing SECURITY_AUDIT should delay client loading until a more
+         * friendly initialization state has been reached (as in original DR).
+         */
+        instrument_init();
+# endif
         audit_client_init(GLOBAL_DCONTEXT, false);
 #endif
         arch_init();
@@ -656,6 +661,7 @@ dynamorio_app_init(void)
         }
 
 #ifdef CLIENT_INTERFACE
+# ifndef SECURITY_AUDIT
         /* client last, in case it depends on other inits: must be after
          * dynamo_thread_init so the client can use a dcontext (PR 216936).
          * Note that we *load* the client library before installing our hooks,
@@ -665,7 +671,8 @@ dynamorio_app_init(void)
          *       report; better document that client libraries shouldn't have
          *       DllMain.
          */
-        //instrument_init();
+        instrument_init();
+# endif
         /* To give clients a chance to process pcaches as we load them, we
          * delay the loading until we've initialized the clients.
          */
