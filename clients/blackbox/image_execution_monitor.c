@@ -863,8 +863,8 @@ report_edge_miss(dcontext_t *dcontext, uint type_flags, app_pc from, app_pc to, 
     bb_state_t *to_state, module_location_t *to_module)
 {
     uint i, test;
-    bool was_to_miss_already_known = IS_BB_MONITOR_MISS(to_state);
 #ifdef ANALYZE_UNEXPECTED_SUBGRAPHS
+    bool was_to_miss_already_known = IS_BB_MONITOR_MISS(to_state);
     unrecognized_subgraph_t *miss_subgraph = NULL; // increment counts for this subgraph, if any
 #endif
     if (!IS_BB_MONITORED(to_state)) {
@@ -959,19 +959,21 @@ merge_left_subgraph_into_right(unrecognized_subgraph_t *left, unrecognized_subgr
 
 static void
 report_miss_totals(char *label, miss_type_count_t *c) {
-    uint anonymous_cross_module_misses = MISS_COUNT(c, white_box_entry_miss) + MISS_COUNT(c, white_box_exit_miss) +
-        MISS_COUNT(c, black_box_entry_miss) + MISS_COUNT(c, black_box_exit_miss);
-    uint anonymous_intra_misses = MISS_COUNT(c, anonymous_edge_miss) - anonymous_cross_module_misses;
-    uint intra_misses = MISS_COUNT(c, edge_miss) - MISS_COUNT(c, cross_module_edge_miss);
-    uint image_intra_misses = intra_misses - anonymous_intra_misses;
-    uint image_cross_module_misses = MISS_COUNT(c, cross_module_edge_miss) - anonymous_cross_module_misses;
+    IF_DET({
+        uint anonymous_cross_module_misses = MISS_COUNT(c, white_box_entry_miss) + MISS_COUNT(c, white_box_exit_miss) +
+            MISS_COUNT(c, black_box_entry_miss) + MISS_COUNT(c, black_box_exit_miss);
+        uint anonymous_intra_misses = MISS_COUNT(c, anonymous_edge_miss) - anonymous_cross_module_misses;
+        uint intra_misses = MISS_COUNT(c, edge_miss) - MISS_COUNT(c, cross_module_edge_miss);
+        uint image_intra_misses = intra_misses - anonymous_intra_misses;
+        uint image_cross_module_misses = MISS_COUNT(c, cross_module_edge_miss) - anonymous_cross_module_misses;
 
-    MON_LOG("%s: N: %d, E: %d, IM: %d (I: %d, A: %d), CM: %d (I: %d, A: %d, WE: %d, WX: %d, BE: %d, BX: %d)\n", label,
-        MISS_COUNT(c, node_miss), MISS_COUNT(c, edge_miss), intra_misses, image_intra_misses,
-        anonymous_intra_misses, MISS_COUNT(c, cross_module_edge_miss), image_cross_module_misses,
-        anonymous_cross_module_misses, MISS_COUNT(c, white_box_entry_miss),
-        MISS_COUNT(c, white_box_exit_miss), MISS_COUNT(c, black_box_entry_miss),
-        MISS_COUNT(c, black_box_exit_miss));
+        MON_DET("%s: N: %d, E: %d, IM: %d (I: %d, A: %d), CM: %d (I: %d, A: %d, WE: %d, WX: %d, BE: %d, BX: %d)\n", label,
+            MISS_COUNT(c, node_miss), MISS_COUNT(c, edge_miss), intra_misses, image_intra_misses,
+            anonymous_intra_misses, MISS_COUNT(c, cross_module_edge_miss), image_cross_module_misses,
+            anonymous_cross_module_misses, MISS_COUNT(c, white_box_entry_miss),
+            MISS_COUNT(c, white_box_exit_miss), MISS_COUNT(c, black_box_entry_miss),
+            MISS_COUNT(c, black_box_exit_miss));
+    });
 }
 
 static int
