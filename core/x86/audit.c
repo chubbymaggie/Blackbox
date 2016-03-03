@@ -357,6 +357,9 @@ dr_log_last_exit(dcontext_t *dcontext, app_pc tag, const char *prefix, uint logl
     linkstub_t *l;
     fragment_t *f = fragment_lookup(dcontext, tag);
 
+    if (f == NULL)
+        return; /* some internal fragment, even if not flagged as such */
+
     SEC_LOG(loglevel, "%s%sbuilding trace\n", prefix,
             is_building_trace(dcontext) ? "" : "not ");
 
@@ -737,8 +740,9 @@ update_ibp_table_and_mask(dcontext_t *dcontext, ibp_table_t *htable) {
         }
     }
 
-    SEC_LOG(3, "ibp update on thread 0x%x: table is now at "PX" with mask %x\n",
-            dr_get_thread_id(dcontext), htable->table, htable->hash_mask);
+    // cs-todo: is it better to hvae a separate ibp table on each thread?
+    SEC_LOG(3, "ibp update: table is now at "PX" with mask %x\n",
+            htable->table, htable->hash_mask);
 }
 
 static void

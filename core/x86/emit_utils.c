@@ -2249,6 +2249,11 @@ encode_with_patch_list(dcontext_t *dcontext, patch_list_t *patch,
         len += instr_length(dcontext, inst);
     }
 
+    if (audit_callbacks->audit_log_file != NULL && audit_callbacks->loglevel >= 3) {
+        dr_fprintf(audit_callbacks->audit_log_file, "Encoding patched ilist:\n");
+        instrlist_disassemble(dcontext, 0, ilist, audit_callbacks->audit_log_file);
+    }
+
     cur = 0;
     /* after instruction list is assembled we collect the offsets */
     for (inst = instrlist_first(ilist); inst; inst = instr_get_next(inst)) {

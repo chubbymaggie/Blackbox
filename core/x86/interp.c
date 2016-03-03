@@ -222,7 +222,7 @@ typedef struct {
     app_pc pretend_pc;          /* selfmod only: decode from separate pc */
     DEBUG_DECLARE(bool initialized;)
 #ifdef SECURITY_AUDIT
-    int syscall_number;
+    int audit_sysnum;
 #endif
 } build_bb_t;
 
@@ -249,7 +249,7 @@ init_build_bb(build_bb_t *bb, app_pc start_pc, bool app_interp, bool for_cache,
     bb->follow_direct = !TEST(FRAG_SELFMOD_SANDBOXED, known_flags);
     bb->flags = known_flags;
 #ifdef SECURITY_AUDIT
-    bb->syscall_number = 0;
+    bb->audit_sysnum = 0;
 #endif
     DODEBUG(bb->initialized = true;);
 }
@@ -1767,7 +1767,7 @@ bb_process_syscall(dcontext_t *dcontext, build_bb_t *bb)
      */
     if (bb->pass_to_client && !bb->post_client) {
 #ifdef SECURITY_AUDIT
-        bb->syscall_number = -1;
+        bb->audit_sysnum = -1;
 #endif
         return false;
     }
@@ -1795,15 +1795,15 @@ bb_process_syscall(dcontext_t *dcontext, build_bb_t *bb)
     });
 #endif
     BBPRINT(bb, 3, "syscall # is %d\n", sysnum);
+#ifdef SECURITY_AUDIT
+    bb->audit_sysnum = sysnum; /* N.B.: audit always needs the sysnum */
+#endif
 #ifdef CLIENT_INTERFACE
     if (sysnum > -1 && instrument_filter_syscall(dcontext, sysnum)) {
         BBPRINT(bb, 3, "client asking to intercept => pretending syscall # %d is -1\n",
                 sysnum);
         sysnum = -1;
     }
-#endif
-#ifdef SECURITY_AUDIT
-    bb->syscall_number = sysnum;
 #endif
 
     if (sysnum > -1 &&
@@ -2781,9 +2781,9 @@ client_process_bb(dcontext_t *dcontext, build_bb_t *bb)
 #ifdef SECURITY_AUDIT
     if (bb->for_cache) {
         if (bb->for_trace)
-            audit_translation(dcontext, NULL, bb->ilist, bb->syscall_number);
+            audit_translation(dcontext, NULL, bb->ilist, bb->audit_sysnum);
         else
-            audit_translation(dcontext, bb->start_pc, bb->ilist, bb->syscall_number);
+            audit_translation(dcontext, bb->start_pc, bb->ilist, bb->audit_sysnum);
     }
 #endif
 
@@ -3856,7 +3856,7 @@ build_bb_ilist(dcontext_t *dcontext, build_bb_t *bb)
 #ifdef SECURITY_AUDIT
         audit_indirect_branchpoint(dcontext, bb->ilist, bb->start_pc, exit_instr,
                                    bb->instr != NULL && instr_is_return(bb->instr),
-                                   bb->syscall_number);
+                                   bb->audit_sysnum);
 #endif
     }
 

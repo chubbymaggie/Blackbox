@@ -25,9 +25,6 @@
 void
 init_link_observer(dcontext_t *dcontext, bool isFork);
 
-void
-notify_dynamo_model_initialized();
-
 /* Called from DR when a new thread is initialized in the target application.
  * Creates a new hashtable to maintain indirect branch history for the thread,
  * and a pair of hashtables to maintain hashcodes for dynamic syscalls. */

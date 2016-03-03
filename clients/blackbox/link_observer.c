@@ -71,11 +71,6 @@ init_link_observer(dcontext_t *dcontext, bool is_fork) {
 }
 
 void
-notify_dynamo_model_initialized() {
-    init_execution_monitor();
-}
-
-void
 link_observer_thread_init(dcontext_t *dcontext) {
     uint i;
     crowd_safe_thread_local_t *cstl;

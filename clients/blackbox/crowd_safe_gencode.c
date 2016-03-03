@@ -266,6 +266,9 @@ append_indirect_link_notification_hook(dcontext_t *dcontext, instrlist_t *ilist,
 
     ASSERT(*gencode_in_progress);
 
+    CS_LOG("append_indirect_link_notification_hook() with ilist:\n");
+    instrlist_disassemble(dcontext, 0, ilist, cs_log_file);
+
     /********** branch targets ***********/
 
     // { %rbx=to, %temp1=from } : hashing into %temp1: shift the from tag by one bit
@@ -386,6 +389,9 @@ append_indirect_link_notification(dcontext_t *dcontext, instrlist_t *ilist,
                                   instr_t *fragment_not_found) {
     CROWD_SAFE_DEBUG_HOOK_VOID(__FUNCTION__);
 
+    CS_LOG("append_indirect_link_notification() with ilist:\n");
+    instrlist_disassemble(dcontext, 0, ilist, cs_log_file);
+
     if (!is_tracked_ibl_routine(indirect_branch_lookup_routine)) {
         CS_WARN("Skipping instrumentation of untracked ibl routine at %x\n",
                 indirect_branch_lookup_routine);
@@ -409,7 +415,7 @@ adjust_for_ibl_instrumentation(dcontext_t *dcontext, app_pc pc, app_pc raw_start
         ibl_setup_next_pc = decode(dcontext, ibl_setup_pc, &instr);
         if (ibl_setup_next_pc != NULL && is_ibl_setup_instr(&instr))
             pc = ibl_setup_pc;
-        instr_destroy(dcontext, &instr);
+        instr_free(dcontext, &instr);
     }
 
     return pc;

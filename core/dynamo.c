@@ -366,7 +366,7 @@ dynamorio_app_init(void)
 {
     int size;
 #ifdef SECURITY_AUDIT
-    audit_init_log(false/*not fork*/, is_wow64_process(NT_CURRENT_PROCESS));
+    // audit_init_log(false/*not fork*/, is_wow64_process(NT_CURRENT_PROCESS));
 #endif
 
     if (!dynamo_initialized /* we do enter if nullcalls is on */) {
@@ -561,6 +561,7 @@ dynamorio_app_init(void)
          */
         instrument_init();
 # endif
+        audit_init_log(false/*not fork*/, is_wow64_process(NT_CURRENT_PROCESS)); // cs-todo: consolidate
         audit_client_init(GLOBAL_DCONTEXT, false);
 #endif
         arch_init();

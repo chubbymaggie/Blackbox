@@ -313,7 +313,9 @@
 #  define MUTEX_CALLSTACK /* requires DEADLOCK_AVOIDANCE */
    /* even though only usable in all-private config useful in default builds */
 #  define SHARING_STUDY
-#  define HASHTABLE_STATISTICS
+#  ifndef SECURITY_AUDIT
+#    define HASHTABLE_STATISTICS
+#  endif
 #endif
 
 #ifdef LINKCOUNT

@@ -262,11 +262,11 @@ typedef uint clock_type_t;
 #define SET_EXCEPTION_RESUMING(cstl) (cstl->bb_meta.is_exception_resuming = true)
 
 #define GET_CSTL(dcontext) \
-    ((crowd_safe_thread_local_t *) &(dcontext_get_audit_state(dcontext)->security_audit_thread_local))
+    ((crowd_safe_thread_local_t *) (dcontext_get_audit_state(dcontext)->security_audit_thread_local))
 #define SET_CSTL(dcontext, cstl) \
 do { \
     dcontext_get_audit_state(dcontext)->security_audit_thread_local = cstl; \
-} while (0);
+} while (0)
 
 #define GET_SHADOW_STACK_BASE(sas) \
     (((crowd_safe_thread_local_t *)((sas)->security_audit_thread_local))->shadow_stack_base)

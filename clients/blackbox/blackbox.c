@@ -10,6 +10,7 @@
 #include "indirect_link_observer.h"
 #include "indirect_link_hashtable.h"
 #include "network_monitor.h"
+#include "execution_monitor.h"
 #include "crowd_safe_gencode.h"
 #include "crowd_safe_util.h"
 
@@ -106,6 +107,9 @@ audit_nt_continue(dcontext_t *dcontext)
 static void
 audit_socket_handle(dcontext_t *dcontext, HANDLE handle, bool created)
 {
+    if (!CROWD_SAFE_NETWORK_MONITOR())
+        return;
+
     if (created)
         notify_socket_created(handle);
     else
@@ -118,6 +122,9 @@ audit_device_io_control(dcontext_t *dcontext, uint result, HANDLE socket, HANDLE
                         byte *input_data, uint input_length, byte *output_data,
                         uint output_length)
 {
+    if (!CROWD_SAFE_NETWORK_MONITOR())
+        return;
+
     notify_device_io_control(dcontext, result, socket, event, status_block,
                              control_code, input_data, input_length, output_data,
                              output_length);
@@ -126,6 +133,9 @@ audit_device_io_control(dcontext_t *dcontext, uint result, HANDLE socket, HANDLE
 static void
 audit_wait_for_single_object(dcontext_t *dcontext, HANDLE event)
 {
+    if (!CROWD_SAFE_NETWORK_MONITOR())
+        return;
+
     notify_wait_for_single_object(dcontext, event);
 }
 
@@ -133,6 +143,9 @@ static void
 audit_wait_for_multiple_objects(dcontext_t *dcontext, uint result, uint handle_count,
                                 HANDLE *handles, bool wait_all)
 {
+    if (!CROWD_SAFE_NETWORK_MONITOR())
+        return;
+
     notify_wait_for_multiple_objects(dcontext, result, handle_count, handles, wait_all);
 }
 #endif
@@ -182,7 +195,7 @@ audit_process_fork(dcontext_t *dcontext, const wchar_t *name)
 static void
 audit_dynamo_model_initialized()
 {
-    notify_dynamo_initialized();
+    init_execution_monitor();
 }
 
 static void
@@ -343,7 +356,7 @@ audit_gencode_ibl_routine(app_pc pc, bool syscall)
 static void
 audit_translation(dcontext_t *dcontext, app_pc start_pc, instrlist_t *ilist, int sysnum)
 {
-    if (start_pc != NULL) {
+    if (start_pc == NULL) {
         notify_trace_constructed(dcontext, ilist);
     } else {
         notify_basic_block_constructed(dcontext, start_pc, ilist, sysnum >= 0, sysnum);
