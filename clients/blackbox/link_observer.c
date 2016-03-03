@@ -53,7 +53,7 @@ init_link_observer(dcontext_t *dcontext, bool is_fork) {
     }
 
     init_crowd_safe_trace(is_fork);
-    init_module_observer(is_fork);
+    // init_module_observer(is_fork);
 
     if (CROWD_SAFE_NETWORK_MONITOR())
         init_network_monitor();

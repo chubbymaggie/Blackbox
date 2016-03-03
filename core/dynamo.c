@@ -561,8 +561,8 @@ dynamorio_app_init(void)
          */
         instrument_init();
 # endif
-        audit_init_log(false/*not fork*/, is_wow64_process(NT_CURRENT_PROCESS)); // cs-todo: consolidate
-        audit_client_init(GLOBAL_DCONTEXT, false);
+        audit_init_log(false/*not fork*/, is_wow64_process(NT_CURRENT_PROCESS));
+        audit_client_init(GLOBAL_DCONTEXT, false); // cs-todo: move into dr_init()?
 #endif
         arch_init();
         synch_init();

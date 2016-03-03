@@ -365,7 +365,7 @@ void
 init_module_observer(bool is_fork) {
     CROWD_SAFE_DEBUG_HOOK_VOID(__FUNCTION__);
 
-    if (!is_fork) {
+    if (!is_fork) { // remove this!
         app_pc s;
         bb_hash_t hash;
 
@@ -491,7 +491,15 @@ init_module_observer(bool is_fork) {
 }
 
 void
-notify_dynamo_initialized() {
+load_initial_modules() {
+    dr_module_iterator_t *mi = dr_module_iterator_start();
+    while (dr_module_iterator_hasnext(mi)) {
+        module_data_t *data = dr_module_iterator_next(mi);
+        notify_module_loaded(GLOBAL_DCONTEXT, data, true /*already loaded*/);
+        dr_free_module_data(data);
+    }
+    dr_module_iterator_stop(mi);
+
 #ifdef UNIX
     register_plt_trampolines();
 #endif

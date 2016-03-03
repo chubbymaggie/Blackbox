@@ -196,6 +196,7 @@ static void
 audit_dynamo_model_initialized()
 {
     init_execution_monitor();
+    load_initial_modules();
 }
 
 static void
@@ -454,6 +455,8 @@ dr_init(client_id_t id)
     dr_printf("options: %s\n", options);
 
     process_start_time = dr_get_milliseconds();
+
+    init_module_observer(false/*not fork*/);
 
     dr_register_exit_event(event_exit);
     dr_register_audit_callbacks(&callbacks);

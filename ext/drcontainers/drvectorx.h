@@ -350,7 +350,7 @@ VECTOR_NAME(,NAME_KEY,_overlap_search)(VECTOR_TYPE *vec, COMPARISON_TYPE start, 
 
     index = (uint)(-(i+1));
     next = _IF_ENTRY_INLINE(&)vec->array[index];
-    if ((index < vec->entries) && (_IF_SORTED(vec->)comparator(_IF_ENTRY_INLINE(*)next, end) <= 0))
+    if ((index < vec->entries) && (_IF_SORTED(vec->)comparator(_IF_ENTRY_INLINE(*)next, end) < 0)) /* was "end) <= 0" */
         return next;
     else
         return NULL;

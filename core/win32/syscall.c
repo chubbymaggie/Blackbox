@@ -3860,7 +3860,7 @@ postsys_SetIoCompletion(dcontext_t *dcontext, reg_t *param_base, bool success)
     // _In_ PVOID CompletionContext,
     // _In_ NTSTATUS CompletionStatus,
     // _In_ ULONG CompletionInformation);
-    if (success) {
+    if (false && success) {
         HANDLE completion_handle = (HANDLE) postsys_param(dcontext, param_base, 0);
         uint completion_key = *(uint *) postsys_param(dcontext, param_base, 1);
         void *completion_context = (void *) postsys_param(dcontext, param_base, 2);

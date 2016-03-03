@@ -31,7 +31,7 @@ void
 init_module_observer(bool is_fork);
 
 void
-notify_dynamo_initialized();
+load_initial_modules();
 
 module_location_t*
 get_module_for_address(app_pc instr_start);

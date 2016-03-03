@@ -9,8 +9,6 @@
 
 typedef enum trace_file_id trace_file_id;
 enum trace_file_id {
-    block_hash_file,
-    pair_hash_file,
     module_file,
     graph_node_file,
     graph_edge_file,

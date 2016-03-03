@@ -168,7 +168,8 @@ init_crowd_safe_trace(bool isFork) {
                         GRAPH_BUFFER_LONG_COUNT, "call-stack", "dat");
     activate_trace_file(meta_file, true, true,
                         GRAPH_BUFFER_LONG_COUNT, "meta", "dat");
-    /* activate cross_module_hash_file on demand */
+    activate_trace_file(cross_module_hash_file, false/*activate on demand*/, false,
+                        0, "xhash", "tab");
     activate_trace_file(disassembly_file, is_bb_analysis_level_active(BB_ANALYSIS_ASSEMBLY),
                         false, 0, "disassembly", "log");
 

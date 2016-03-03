@@ -265,7 +265,9 @@ typedef uint clock_type_t;
     ((crowd_safe_thread_local_t *) (dcontext_get_audit_state(dcontext)->security_audit_thread_local))
 #define SET_CSTL(dcontext, cstl) \
 do { \
-    dcontext_get_audit_state(dcontext)->security_audit_thread_local = cstl; \
+    local_security_audit_state_t *csd = dcontext_get_audit_state(dcontext); \
+    csd->security_audit_thread_local = cstl; \
+    cstl->csd = csd; \
 } while (0)
 
 #define GET_SHADOW_STACK_BASE(sas) \

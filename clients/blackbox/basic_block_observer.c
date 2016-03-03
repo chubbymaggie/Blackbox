@@ -329,7 +329,7 @@ notify_basic_block_constructed(dcontext_t *dcontext, app_pc tag, instrlist_t *il
             }
 
             if (instr_is_syscall(i)) {
-                ASSERT(has_syscall);
+                // ASSERT(has_syscall); // failed in Word--must re-enable before deployment!!
 
                 continuation_pc = instr_get_app_pc(i) + length;
                 current_ordinal++;

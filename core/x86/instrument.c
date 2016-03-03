@@ -1241,12 +1241,12 @@ instrument_thread_exit(dcontext_t *dcontext)
 #ifdef DEBUG
     /* PR 470957: avoid racy crashes by not freeing in release build */
 
-# ifdef CLIENT_SIDELINE
-    DELETE_LOCK(dcontext->client_data->sideline_mutex);
-# endif
-
 # ifdef SECURITY_AUDIT
     return;
+# endif
+
+# ifdef CLIENT_SIDELINE
+    DELETE_LOCK(dcontext->client_data->sideline_mutex);
 # endif
 
     /* could be heap space allocated for the todo list */
