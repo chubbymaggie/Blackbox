@@ -250,14 +250,6 @@ void
 dr_log_last_exit(dcontext_t *dcontext, app_pc tag, const char *prefix, uint loglevel);
 
 DR_API
-void
-dr_instrument_call_site(dcontext_t *dcontext, instrlist_t *ilist, instr_t *call_instr);
-
-DR_API
-uint
-dr_instrument_return_site(dcontext_t *dcontext, instrlist_t *ilist, instr_t *next, app_pc tag);
-
-DR_API
 bb_tag_pairing_t
 dr_ibp_lookup(dcontext_t *dcontext, bb_tag_pairing_t key);
 
@@ -425,14 +417,8 @@ audit_process_terminating(bool external, bool is_crash, const char *file,
 
 /* dispatch */
 
-inline void
-audit_dispatch(dcontext_t *dcontext)
-{
-    if (audit_callbacks == NULL)
-        return;
-
-    audit_callbacks->audit_dispatch(dcontext);
-}
+void
+audit_dispatch(dcontext_t *dcontext);
 
 inline void
 audit_fcache_enter(dcontext_t *dcontext)

@@ -26,7 +26,7 @@ write_graph_metadata();
  * analysis file, the requested content is output to the analysis file. */
 void
 notify_basic_block_constructed(dcontext_t *dcontext,
-    app_pc tag, instrlist_t *ilist, bool has_syscall, int syscall_number);
+    app_pc tag, instrlist_t *ilist, int syscall_number);
 
 void
 notify_trace_constructed(dcontext_t *dcontext, instrlist_t *ilist);

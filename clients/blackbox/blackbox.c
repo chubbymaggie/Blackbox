@@ -360,7 +360,7 @@ audit_translation(dcontext_t *dcontext, app_pc start_pc, instrlist_t *ilist, int
     if (start_pc == NULL) {
         notify_trace_constructed(dcontext, ilist);
     } else {
-        notify_basic_block_constructed(dcontext, start_pc, ilist, sysnum >= 0, sysnum);
+        notify_basic_block_constructed(dcontext, start_pc, ilist, sysnum);
     }
 }
 

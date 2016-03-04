@@ -127,6 +127,9 @@ static trampoline_tracker*
 create_trampoline_tracker(app_pc tag, app_pc plt_cell);
 #endif
 
+static void
+instrument_call_site(dcontext_t *dcontext, instrlist_t *ilist, instr_t *call_instr);
+
 #ifdef CROWD_SAFE_DYNAMIC_IMPORTS
 static void
 instrument_get_proc_address_entry(dcontext_t *dcontext, instrlist_t *ilist, instr_t *insert_before);
@@ -195,8 +198,8 @@ write_graph_metadata() {
 }
 
 void
-notify_basic_block_constructed(dcontext_t *dcontext, app_pc tag, instrlist_t *ilist,
-                               bool has_syscall, int syscall_number)
+notify_basic_block_constructed(dcontext_t *dcontext, app_pc tag,
+                               instrlist_t *ilist, int syscall_number)
 {
     bb_hash_t hash = 0ULL;
     instr_t *i;
@@ -329,8 +332,6 @@ notify_basic_block_constructed(dcontext_t *dcontext, app_pc tag, instrlist_t *il
             }
 
             if (instr_is_syscall(i)) {
-                // ASSERT(has_syscall); // failed in Word--must re-enable before deployment!!
-
                 continuation_pc = instr_get_app_pc(i) + length;
                 current_ordinal++;
                 if (syscall_number < 0) {
@@ -420,9 +421,9 @@ notify_basic_block_constructed(dcontext_t *dcontext, app_pc tag, instrlist_t *il
     if (continuation_pc != NULL)
         add_pending_edge(tag, continuation_pc, current_ordinal, call_continuation_edge, location, location, false);
     if (call_instr != NULL)
-        dr_instrument_call_site(dcontext, ilist, call_instr);
+        instrument_call_site(dcontext, ilist, call_instr);
 
-    if (has_syscall && (syscall_number >= 0)) {
+    if (syscall_number >= 0) {
         ASSERT(syscall_number < (SYSCALL_SINGLETON_END - SYSCALL_SINGLETON_START));
 
         SET_STATIC_SYSCALL_NUMBER(cstl, syscall_number);
@@ -437,7 +438,7 @@ notify_trace_constructed(dcontext_t *dcontext, instrlist_t *ilist) {
     for (i = instrlist_first(ilist); i != NULL; i = next) {
         next = instr_get_next(i);
         if (instr_is_call(i) && CALL_WILL_RETURN(i))
-            dr_instrument_call_site(dcontext, ilist, i);
+            instrument_call_site(dcontext, ilist, i);
     }
 }
 
@@ -700,6 +701,30 @@ create_trampoline_tracker(app_pc tag, app_pc plt_cell) {
 }
 #endif
 
+static void
+instrument_call_site(dcontext_t *dcontext, instrlist_t *ilist, instr_t *call_instr) {
+    uint added_size = 0U;
+    instr_t *stack_add = INSTR_CREATE_lea(dcontext,
+        opnd_create_reg(DR_REG_XSI),
+        opnd_create_base_disp(DR_REG_NULL, DR_REG_XSI, 1, sizeof(shadow_stack_frame_t), OPSZ_lea));
+
+    PRE(call_instr, added_size, SAVE_TO_TLS(dcontext, DR_REG_XSI, TLS_XSI_TEMP));
+    PRE(call_instr, added_size, RESTORE_FROM_TLS(dcontext, DR_REG_XSI, TLS_SHADOW_STACK_POINTER));
+
+    PRE(call_instr, added_size, INSTR_CREATE_mov_imm(dcontext,
+        OPND_CREATE_MEMPTR(DR_REG_XSI, 0),
+        OPND_CREATE_INTPTR(instr_get_app_pc(call_instr) + instr_length(dcontext, call_instr))));
+
+    PRE(call_instr, added_size, INSTR_CREATE_mov_st(dcontext,
+        OPND_CREATE_MEMPTR(DR_REG_XSI, sizeof(app_pc)),
+        opnd_create_reg(DR_REG_XSP)));
+
+    PRE(call_instr, added_size, stack_add);
+
+    PRE(call_instr, added_size, SAVE_TO_TLS(dcontext, DR_REG_XSI, TLS_SHADOW_STACK_POINTER));
+    PRE(call_instr, added_size, RESTORE_FROM_TLS(dcontext, DR_REG_XSI, TLS_XSI_TEMP));
+}
+
 uint
 instrument_return_site(dcontext_t *dcontext, instrlist_t *ilist, instr_t *next, app_pc tag) {
     bool ur;
@@ -710,22 +735,22 @@ instrument_return_site(dcontext_t *dcontext, instrlist_t *ilist, instr_t *next, 
     ur = IS_BB_UNEXPECTED_RETURN(state);
     hashcode_lock_release();
 
-    if (ur)
+    if (ur) {
         return 0;
-    else
-        return dr_instrument_return_site(dcontext, ilist, next, tag);
+    } else {
+        uint added_size = 0U;
+        instr_t *stack_sub = INSTR_CREATE_lea(dcontext,
+            opnd_create_reg(DR_REG_XCX),
+            opnd_create_base_disp(DR_REG_NULL, DR_REG_XCX, 1, -(int)sizeof(shadow_stack_frame_t), OPSZ_lea));
+
+        // lea ecx, [TLS_SHADOW_STACK_POINTER-8] - <singleton-return-address>
+        // jecxz next
+        PRE(next, added_size, RESTORE_FROM_TLS(dcontext, DR_REG_XCX, TLS_SHADOW_STACK_POINTER));
+        PRE(next, added_size, stack_sub);
+        PRE(next, added_size, SAVE_TO_TLS(dcontext, DR_REG_XCX, TLS_SHADOW_STACK_POINTER));
+        return added_size;
+    }
 }
-
-/*
-    APP(ilist, INSTR_CREATE_test(dcontext,
-        OPND_TLS_FIELD(TLS_IBP_FLAGS),
-        OPND_CREATE_INT32(IBP_META_RETURN)));
-
-    // { %rbx=to, %temp1=from } : `return=1` so not a return: skip shadow stack resolution
-    APP(ilist, INSTR_CREATE_jcc(dcontext,
-        OP_jnz,
-        opnd_create_instr(indirect_link_notification_jump)));
-*/
 
 #ifdef CROWD_SAFE_DYNAMIC_IMPORTS
 static inline void

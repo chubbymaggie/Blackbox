@@ -8161,6 +8161,7 @@ check_thread_vm_area(dcontext_t *dcontext, app_pc pc, app_pc tag, void **vmlist,
     }
     result = true;
 
+#if (0)
     /* we are building a real bb, assert consistency checks */
     DOCHECK(1, {
         uint prot2;
@@ -8169,6 +8170,7 @@ check_thread_vm_area(dcontext_t *dcontext, app_pc pc, app_pc tag, void **vmlist,
                TEST(FRAG_SELFMOD_SANDBOXED, *flags));
         ASSERT(is_readable_without_exception_try(pc, 1));
     });
+#endif
 
  check_thread_return:
     check_thread_vm_area_cleanup(dcontext, false/*not aborting*/,
