@@ -22,6 +22,9 @@ harvest_resolved_imports(dcontext_t *dcontext);
 #endif
 
 void
+install_new_shadow_stack(dcontext_t *dcontext);
+
+void
 push_nested_shadow_stack(dcontext_t *dcontext);
 
 void

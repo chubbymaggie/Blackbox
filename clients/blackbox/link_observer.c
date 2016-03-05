@@ -27,6 +27,15 @@
 static int *initialized_thread_count;
 static uint *debug_count;
 
+typedef struct _suspended_shadow_stack_t {
+    shadow_stack_frame_t *shadow_stack_base;
+    shadow_stack_frame_t *current_frame;
+} suspended_shadow_stack_t;
+
+#define SUSPENDED_SHADOW_STACKS_KEY_SIZE 5
+
+static hashtable_t *suspended_shadow_stacks;
+
 /**** Private Prototypes ****/
 
 static void
@@ -50,6 +59,17 @@ init_link_observer(dcontext_t *dcontext, bool is_fork) {
         ibp_hash_global_init(dcontext);
         initialized_thread_count = (int*)CS_ALLOC(sizeof(int));
         *initialized_thread_count = 0;
+
+        suspended_shadow_stacks = (hashtable_t*)CS_ALLOC(sizeof(hashtable_t));
+        hashtable_init_ex(
+            suspended_shadow_stacks,
+            SUSPENDED_SHADOW_STACKS_KEY_SIZE,
+            HASH_INTPTR,
+            false,
+            false,
+            NULL,
+            NULL, /* no custom hashing */
+            NULL);
     }
 
     init_crowd_safe_trace(is_fork);
@@ -238,16 +258,14 @@ crowd_safe_dispatch(dcontext_t *dcontext) {
                 matched_address = true;
             } else {
                 bool expected = false;
-                int stack_delta = xsp - SHADOW_FRAME(csd)->base_pointer;
+                int stack_delta = xsp - top->base_pointer;
                 if (stack_delta < 0)
                     stack_delta = -stack_delta;
 
                 csd->shadow_stack_miss_frame = csd->shadow_stack;
-                if (stack_delta > 0x1000) {
-                    context_switch = true;
-                } else {
+                if (xsp <= GET_SHADOW_STACK_BOTTOM_FRAME(csd) && (xsp + 0x20) >= top->base_pointer) { // stack_delta > 0x1000) {
                     while ((SHADOW_FRAME(csd)->base_pointer < xsp) &&
-                          (SHADOW_FRAME(csd)->base_pointer != (app_pc)SHADOW_STACK_SENTINEL))
+                           (SHADOW_FRAME(csd)->base_pointer != (app_pc)SHADOW_STACK_SENTINEL))
                     {
                         csd->shadow_stack--;
                         unwind_count++;
@@ -257,6 +275,8 @@ crowd_safe_dispatch(dcontext_t *dcontext) {
                             break;
                         }
                     }
+                } else {
+                    context_switch = true;
                 }
                 if (!expected)
                     IBP_SET_META(ibp_data, |, IBP_META_UNEXPECTED_RETURN);
@@ -300,18 +320,46 @@ crowd_safe_dispatch(dcontext_t *dcontext) {
                     CS_DET("<ss> TC: %d unwound to frame %d\n", unwind_count,
                            SHADOW_STACK_FRAME_NUMBER(csd, top));
                 }
-            } else {
-                if (context_switch) {
-                    CS_DET("<ss> context switch at frame %d on thread 0x%x\n",
-                           SHADOW_STACK_FRAME_NUMBER(csd, top), current_thread_id());
+            } else if (context_switch) {
+                crowd_safe_thread_local_t *cstl = GET_CSTL(dcontext);
+                suspended_shadow_stack_t *sss;
+
+                // how to clean up stale ones?
+                // maybe push this into indirect_link_obs?
+
+                CS_LOG("<ss> context switch at frame %d on thread 0x%x\n",
+                       SHADOW_STACK_FRAME_NUMBER(csd, top), current_thread_id());
+
+                sss = (suspended_shadow_stack_t *) hashtable_lookup(suspended_shadow_stacks, to_tag);
+                if (sss == NULL) {
+                    // maybe scan for an sss having active base pointer near XSP?
+
+                    sss = CS_ALLOC(sizeof(suspended_shadow_stack_t));
+                    sss->shadow_stack_base = cstl->shadow_stack_base;
+                    sss->current_frame = SHADOW_FRAME(csd);
+                    install_new_shadow_stack(dcontext);
                 } else {
-                    CS_DET("<ss> UR (%d unwound) XSP: "PX" %s SS.base: "PX" @ "PX"(%d)"
-                           " | ibp_to: "PX" %s SS.addr: "PX"; thread 0x%x\n",
-                           unwind_count, xsp, xsp > top->base_pointer ? ">" : "<",
-                           top->base_pointer, int2p(top), SHADOW_STACK_FRAME_NUMBER(csd, top),
-                           ibp_data->ibp_to_tag, ibp_data->ibp_to_tag == top->return_address ? "==" : "!=",
-                           top->return_address, current_thread_id());
+                    suspended_shadow_stack_t sss_temp;
+
+                    sss_temp.shadow_stack_base = cstl->shadow_stack_base;
+                    sss_temp.current_frame = SHADOW_FRAME(csd);
+
+                    cstl->shadow_stack_base = sss->shadow_stack_base;
+                    csd->shadow_stack = sss->current_frame;
+
+                    hashtable_remove(suspended_shadow_stacks, to_tag);
+                    *sss = sss_temp; /* fieldwise copy */
+
+                    // dr_global_free(sss, sizeof(suspended_shadow_stack_t)); // when is it obsolete?
                 }
+                hashtable_add(suspended_shadow_stacks, sss->current_frame->return_address, sss);
+            } else {
+                CS_DET("<ss> UR (%d unwound) XSP: "PX" %s SS.XSP: "PX" @ "PX"(%d)"
+                       " | ibp_to: "PX" %s SS.addr: "PX"; thread 0x%x\n",
+                       unwind_count, xsp, xsp > top->base_pointer ? ">" : "<",
+                       top->base_pointer, int2p(top), SHADOW_STACK_FRAME_NUMBER(csd, top),
+                       ibp_data->ibp_to_tag, ibp_data->ibp_to_tag == top->return_address ? "==" : "!=",
+                       top->return_address, current_thread_id());
             }
         } else {
             CS_DET("<ss-match>\n");
@@ -487,6 +535,9 @@ destroy_link_observer() {
     dr_global_free(initialized_thread_count, sizeof(int));
     initialized_thread_count = NULL;
     //close_crowd_safe_log();
+
+    hashtable_delete(suspended_shadow_stacks);
+    dr_global_free(suspended_shadow_stacks, sizeof(hashtable_t));
 }
 
 void

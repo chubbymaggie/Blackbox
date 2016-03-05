@@ -91,8 +91,8 @@ typedef fragment_t dr_fragment_t; /* not API exported */
 // cs-todo: read app max from PE optional header SizeOfStackReserve @72
 #define SHADOW_STACK_SIZE 0x200 // in frames
 
-#define SHADOW_FRAME(sas) (sas->shadow_stack-1)
-#define SHADOW_PEEK(sas, n) (sas->shadow_stack-(n+1))
+#define SHADOW_FRAME(sas) ((sas)->shadow_stack-1)
+#define SHADOW_PEEK(sas, n) ((sas)->shadow_stack-((n)+1))
 #define IS_CALLBACK_FRAME(sas) \
     ((SHADOW_FRAME(sas)->base_pointer == (app_pc)SHADOW_STACK_SENTINEL) && \
      (SHADOW_FRAME(sas)->return_address == (app_pc)SHADOW_STACK_CALLBACK_TAG))

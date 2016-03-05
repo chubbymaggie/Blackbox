@@ -40,7 +40,6 @@ init_indirect_link_observer(dcontext_t *dcontext) {
 void
 indirect_link_observer_thread_init(dcontext_t *dcontext) {
     local_security_audit_state_t *csd = GET_CS_DATA(dcontext);
-    crowd_safe_thread_local_t *cstl = GET_CSTL(dcontext);
     CROWD_SAFE_DEBUG_HOOK_VOID(__FUNCTION__);
 
 #ifdef CROWD_SAFE_DYNAMIC_IMPORTS
@@ -51,14 +50,7 @@ indirect_link_observer_thread_init(dcontext_t *dcontext) {
     csd->resolved_imports += 1;
 #endif
 
-    cstl->shadow_stack_base = dr_global_alloc(sizeof(shadow_stack_frame_t) * SHADOW_STACK_SIZE);
-    CS_DET("Allocated shadow stack at "PX"\n", csd->shadow_stack_base);
-    csd->shadow_stack = cstl->shadow_stack_base;
-    csd->shadow_stack->base_pointer = (app_pc)SHADOW_STACK_SENTINEL;
-    csd->shadow_stack->return_address = (app_pc)SHADOW_STACK_EMPTY_TAG;
-    csd->shadow_stack += 1;
-    csd->shadow_stack_miss_frame = 0ULL;
-    csd->stack_spy_mark = 0;
+    install_new_shadow_stack(dcontext);
 
     csd->ibp_data.ibp_from_tag = PC(0);
     csd->ibp_data.ibp_to_tag = PC(0);
@@ -271,6 +263,21 @@ harvest_resolved_imports(dcontext_t *dcontext) {
     }
 }
 #endif
+
+void
+install_new_shadow_stack(dcontext_t *dcontext) {
+    local_security_audit_state_t *csd = GET_CS_DATA(dcontext);
+    crowd_safe_thread_local_t *cstl = GET_CSTL(dcontext);
+
+    cstl->shadow_stack_base = dr_global_alloc(sizeof(shadow_stack_frame_t) * SHADOW_STACK_SIZE);
+    CS_DET("Allocated shadow stack at "PX"\n", csd->shadow_stack_base);
+    csd->shadow_stack = cstl->shadow_stack_base;
+    csd->shadow_stack->base_pointer = (app_pc)SHADOW_STACK_SENTINEL;
+    csd->shadow_stack->return_address = (app_pc)SHADOW_STACK_EMPTY_TAG;
+    csd->shadow_stack += 1;
+    csd->shadow_stack_miss_frame = 0ULL;
+    csd->stack_spy_mark = 0;
+}
 
 void
 push_nested_shadow_stack(dcontext_t *dcontext) {

@@ -144,7 +144,7 @@ typedef struct _local_state_t {
 
 typedef struct _shadow_stack_frame_t {
     app_pc return_address;
-    app_pc base_pointer;
+    app_pc base_pointer; /* XSP prior to the call instruction */
 } shadow_stack_frame_t;
 
 // x64: 60 bytes: 1 cache line

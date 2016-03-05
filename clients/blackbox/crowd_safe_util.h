@@ -40,7 +40,7 @@
 #define CROWD_SAFE_LOG_LEVEL CS_LOG_MESSAGES
 //#define CROWD_SAFE_LOG_MEMORY 1
 //#define CROWD_SAFE_DYNAMIC_IMPORTS: not in here, see arch_exports.h
-#define LOG_ANONYMOUS_ASSEMBLY 1
+//#define LOG_ANONYMOUS_ASSEMBLY 1
 //#define ANALYZE_UNEXPECTED_SUBGRAPHS 1
 #define MONITOR_UNEXPECTED_IBP 1
 //#define MONITOR_ENTRY_RATE 1
@@ -273,6 +273,9 @@ do { \
 #define GET_SHADOW_STACK_BASE(sas) \
     (((crowd_safe_thread_local_t *)((sas)->security_audit_thread_local))->shadow_stack_base)
 #define SHADOW_STACK_FRAME_NUMBER(sas, frame) (frame - GET_SHADOW_STACK_BASE(sas))
+/* N.B.: base frame on every thread is discarded (in Windows 7) */
+#define GET_SHADOW_STACK_BOTTOM_FRAME(sas) \
+    ((GET_SHADOW_STACK_BASE(sas) + 2)->base_pointer)
 
 #if (CROWD_SAFE_LOG_LEVEL > CS_LOG_NONE)
 # define CROWD_SAFE_LOG_ACTIVE 1
