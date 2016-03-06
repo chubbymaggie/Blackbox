@@ -2084,6 +2084,8 @@ presys_ProtectVirtualMemory(dcontext_t *dcontext, reg_t *param_base)
                            DUMP_NOT_XML);
         });
 #endif
+        SEC_LOG(4, "DMP| app_memory_protection_change: "PX" + 0x%x\n", base, size);
+
         res = app_memory_protection_change(dcontext, base, size,
                                            osprot_to_memprot(prot),
                                            &subset_memprot,
@@ -3116,10 +3118,14 @@ postsys_AllocateVirtualMemory(dcontext_t *dcontext, reg_t *param_base, bool succ
 
 #ifdef SECURITY_AUDIT
     if (base != NULL && prot_is_executable(prot)) {
-        SEC_LOG(4, "DMP| Executable memory allocation: "PX" +0x%x\n", base, size);
+        uint flags = GENCODE_PERM_BECOMES_EXECUTABLE; /* not speculative (it is code) */
 
-        audit_memory_executable_change(dcontext, base, size, true/*+x*/,
-                                       is_phandle_me(process_handle)/*safe to read*/);
+        if (is_phandle_me(process_handle))
+            flags |= GENCODE_PERM_SAFE_TO_READ;
+
+        SEC_LOG(3, "DMP| Executable memory allocation: "PX" +0x%x\n", base, size);
+
+        audit_memory_executable_change(dcontext, base, size, flags);
     }
 #endif
 

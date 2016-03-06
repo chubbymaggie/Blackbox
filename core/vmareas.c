@@ -7062,13 +7062,15 @@ app_memory_protection_change(dcontext_t *dcontext, app_pc base, size_t size,
                 SEC_LOG(4, "DMP| Memory becomes executable: "PX" +0x%x\n", base, size);
 
                 audit_memory_executable_change(dcontext, base, size,
-                                               true/*+x*/, true/*safe to read*/);
+                                               GENCODE_PERM_BECOMES_EXECUTABLE |
+                                               GENCODE_PERM_SPECULATIVE |
+                                               GENCODE_PERM_SAFE_TO_READ);
             } else if (has_been_executable && !will_be_executable) {
                 SEC_LOG(4, "DMP| Memory becomes non-executable: "PX" +0x%x\n",
                         base, size);
 
                 audit_memory_executable_change(dcontext, base, size,
-                                               false/*-x*/, false/*safe to read*/);
+                                               GENCODE_PERM_SPECULATIVE);
             }
         }
     }

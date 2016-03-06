@@ -620,27 +620,21 @@ uint
 get_app_stacktrace(dcontext_t *dcontext, uint max_frames, stack_frame_t *frames)
 {
     uint f = 0;
-    dr_mcontext_t mc;
+    module_location_t *frame_module;
+    ptr_uint_t *pc = (ptr_uint_t *) dcontext_get_app_base_pointer(dcontext);
 
-    mc.size = sizeof(mc);
-    mc.flags = DR_MC_INTEGER;
-    if (dr_get_mcontext(dcontext, &mc)) {
-        module_location_t *frame_module;
-        ptr_uint_t *pc = (ptr_uint_t *) (app_pc) mc.xbp;
-
-        while (pc != NULL && dr_is_safe_to_read((byte *)pc, 8)) {
-            frames[f].return_address = (app_pc) *(pc+1); // N.B.: using `frames[f]` as scratch at first
-            if (frames[f].return_address != 0) {
-                frame_module = get_module_for_address(frames[f].return_address);
-                // take the top frame for each sequence of consecutive frames in the same module
-                if (f == 0 || frame_module != frames[f-1].module) {
-                    frames[f].module = frame_module;
-                    if (++f == max_frames)
-                        break;
-                }
+    while (pc != NULL && dr_is_safe_to_read((byte *)pc, 8)) {
+        frames[f].return_address = (app_pc) *(pc+1); // N.B.: using `frames[f]` as scratch at first
+        if (frames[f].return_address != 0) {
+            frame_module = get_module_for_address(frames[f].return_address);
+            // take the top frame for each sequence of consecutive frames in the same module
+            if (f == 0 || frame_module != frames[f-1].module) {
+                frames[f].module = frame_module;
+                if (++f == max_frames)
+                    break;
             }
-            pc = (ptr_uint_t *) *pc;
         }
+        pc = (ptr_uint_t *) *pc;
     }
     return f;
 }
@@ -911,20 +905,18 @@ log_shadow_stack(dcontext_t *dcontext, local_security_audit_state_t *csd, const 
     int frame_number = SHADOW_STACK_FRAME_NUMBER(csd, SHADOW_FRAME(csd)), error_frame = frame_number;
     shadow_stack_frame_t *top = SHADOW_FRAME(csd), *frame = top;
     bool has_entry = false, is_correct = true;
-    dr_mcontext_t mc;
+    app_pc xbp;
     ptr_uint_t *bp;
 
-    mc.size = sizeof(mc);
-    mc.flags = DR_MC_INTEGER;
-    dr_get_mcontext(dcontext, &mc);
-    bp = (ptr_uint_t *) (app_pc) mc.xbp;
+    xbp = dcontext_get_app_base_pointer(dcontext);
+    bp = (ptr_uint_t *) xbp;
 
     if (frame_number > 1 && verify_shadow_stack) {
         ptr_uint_t *next_bp;
         app_pc app_return_address;
 
         if (!return_address_iterator_start(cstl->stack_walk, bp)) {
-            CS_DET("Can't verify shadow stack at bp="PX"\n", mc.xbp);
+            CS_DET("Can't verify shadow stack at bp="PX"\n", xbp);
             return;
         }
 
@@ -989,7 +981,7 @@ log_shadow_stack(dcontext_t *dcontext, local_security_audit_state_t *csd, const 
             if (top_module != NULL && strcmp(top_module->module_name, "dwrite.dll") == 0) {
                 log_lock_acquire();
                 CS_LOCKED_LOG("App stack: ");
-                bp = (ptr_uint_t *) (app_pc)mc->xbp;
+                bp = (ptr_uint_t *) xbp;
                 while (bp != NULL && dr_is_safe_to_read((byte *)bp, 8)) {
                     next_bp = (ptr_uint_t *) *bp;
                     CS_LOCKED_LOG("%x ", *(bp+1));
@@ -1007,7 +999,6 @@ log_shadow_stack(dcontext_t *dcontext, local_security_audit_state_t *csd, const 
 
             log_lock_acquire();
             CS_LOCKED_LOG("Error at shadow frame %d: ", error_frame);
-            bp = (ptr_uint_t *) (app_pc)mc.xbp;
             while (bp != NULL && dr_is_safe_to_read((byte *)bp, 8)) {
                 if (*(bp+1) < 0x40000)
                     break;

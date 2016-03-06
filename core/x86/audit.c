@@ -204,6 +204,18 @@ dcontext_get_app_stack_pointer(dcontext_t *dcontext)
 
 DR_API
 app_pc
+dcontext_get_app_base_pointer(dcontext_t *dcontext)
+{
+    if (dcontext != NULL) {
+        priv_mcontext_t *mc = get_mcontext(dcontext);
+        if (mc != NULL)
+            return (app_pc) mc->xbp;
+    }
+    return NULL;
+}
+
+DR_API
+app_pc
 dr_get_building_trace_tail(dcontext_t *dcontext, bool *is_return, app_pc *trace_tag)
 {
     if (is_ibl_sourceless_linkstub((const linkstub_t*) dcontext->last_exit) &&
@@ -245,7 +257,7 @@ dr_fragment_find_direct_ordinal(fragment_t *from, app_pc to) {
 
     SEC_LOG(4, "Could not find the correct exit ordinal for direct link from tag "PX"\n",
             from->tag);
-    return 0xFF;
+    return UNKNOWN_ORDINAL;
 }
 
 DR_API
@@ -274,7 +286,7 @@ dr_fragment_find_indirect_ordinal(fragment_t *f) {
         exit_ordinal++;
     }
 
-    return 0xff;
+    return UNKNOWN_ORDINAL;
 }
 
 DR_API
@@ -292,7 +304,7 @@ dr_fragment_find_call_ordinal(fragment_t *f) {
         exit_ordinal++;
     }
 
-    return 0xff;
+    return UNKNOWN_ORDINAL;
 }
 
 DR_API

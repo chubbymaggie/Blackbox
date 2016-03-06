@@ -5750,10 +5750,14 @@ dr_mcontext_xmm_fields_valid(void)
 bool
 dr_get_mcontext_priv(dcontext_t *dcontext, dr_mcontext_t *dmc, priv_mcontext_t *mc)
 {
-#ifdef SECURITY_AUDIT
-	return false;
-#else
+//#ifdef SECURITY_AUDIT
+//	return false;
+//#else
     char *state;
+
+    if (dcontext == NULL)
+        return false;
+
     CLIENT_ASSERT(!TEST(SELFPROT_DCONTEXT, DYNAMO_OPTION(protect_mask)),
                   "DR context protection NYI");
     if (mc == NULL) {
@@ -5769,7 +5773,7 @@ dr_get_mcontext_priv(dcontext_t *dcontext, dr_mcontext_t *dmc, priv_mcontext_t *
     } else
         CLIENT_ASSERT(dmc == NULL, "invalid internal params");
 
-# ifdef CLIENT_INTERFACE
+# if defined(CLIENT_INTERFACE) && !defined(SECURITY_AUDIT)
     /* i#117/PR 395156: support getting mcontext from events where mcontext is
      * stable.  It would be nice to support it from init and 1st thread init,
      * but the mcontext is not available at those points.
@@ -5853,7 +5857,7 @@ dr_get_mcontext_priv(dcontext_t *dcontext, dr_mcontext_t *dmc, priv_mcontext_t *
     /* XXX: should we set the pc field? */
 
     return true;
-#endif
+//#endif
 }
 
 DR_API bool

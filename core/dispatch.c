@@ -741,7 +741,7 @@ dispatch_enter_dynamorio(dcontext_t *dcontext)
                 /* && !TEST(LINK_FRAG_OFFS_AT_END, dcontext->last_exit->flags)*/) {
                 byte ordinal = dr_fragment_find_direct_ordinal(dcontext->last_fragment,
                                                                dcontext->next_tag);
-                if (ordinal < 0xff) {
+                if (ordinal != UNKNOWN_ORDINAL) {
                     audit_fragment_direct_link(dcontext, dcontext->last_fragment->tag,
                                                dcontext->next_tag, ordinal);
                 }

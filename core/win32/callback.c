@@ -4004,22 +4004,20 @@ found_modified_code(dcontext_t *dcontext, EXCEPTION_RECORD *pExcptRec,
             }
         }
     } else {
-        bool skip = false;
         uint write_size;
+
         decode_memory_reference_size(dcontext, translated_pc, &write_size);
-
-        if (!skip) {
-            next_pc = handle_modified_code(dcontext, instr_cache_pc, translated_pc, target, f);
+        next_pc = handle_modified_code(dcontext, instr_cache_pc,
+                                       translated_pc, target, f);
 #ifdef SECURITY_AUDIT
-            if (next_pc != NULL) {
-                SEC_LOG(4, "Code modification trap: code at "PX" written by "PX"."
-                        "Resuming at "PX" on thread 0x%x\n",
-                        target, f->tag, next_pc, dr_get_thread_id(dcontext));
+        if (next_pc != NULL) {
+            SEC_LOG(4, "Code modification trap: code at "PX" written by "PX"."
+                    "Resuming at "PX" on thread 0x%x\n",
+                    target, f->tag, next_pc, dr_get_thread_id(dcontext));
 
-                audit_code_modification(dcontext, f, next_pc, target, write_size);
-            }
-#endif
+            audit_code_modification(dcontext, f, next_pc, target, write_size);
         }
+#endif
     }
     /* if !takeover, re-execute the write no matter what -- the assumption
      * is that the write is native */

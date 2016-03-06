@@ -99,6 +99,10 @@ typedef fragment_t dr_fragment_t; /* not API exported */
 
 #define UNKNOWN_ORDINAL 0xff
 
+#define GENCODE_PERM_BECOMES_EXECUTABLE  0x0001
+#define GENCODE_PERM_SPECULATIVE         0x0002
+#define GENCODE_PERM_SAFE_TO_READ        0x0004
+
 /****************************************************************************
  * SECURITY AUDITING SUPPORT
  */
@@ -127,7 +131,7 @@ typedef struct _audit_callbacks_t {
     void (*audit_fragment_remove)(dcontext_t *dcontext, app_pc tag);
     void (*audit_cache_reset)(dcontext_t *dcontext);
     void (*audit_memory_executable_change)(dcontext_t *dcontext, app_pc base, size_t size,
-                                           bool becomes_executable, bool safe_to_read);
+                                           uint flags);
     void (*audit_code_area_expansion)(app_pc original_start, app_pc original_end,
                                       app_pc new_start, app_pc new_end,
                                       bool is_dynamo_areas);
@@ -200,6 +204,10 @@ dcontext_get_ibp_data(dcontext_t *dcontext);
 DR_API
 app_pc
 dcontext_get_app_stack_pointer(dcontext_t *dcontext);
+
+DR_API
+app_pc
+dcontext_get_app_base_pointer(dcontext_t *dcontext);
 
 DR_API
 local_security_audit_state_t *
@@ -478,14 +486,12 @@ audit_cache_reset(dcontext_t *dcontext)
 /* dgc */
 
 inline void
-audit_memory_executable_change(dcontext_t *dcontext, app_pc base, size_t size,
-                               bool becomes_executable, bool safe_to_read)
+audit_memory_executable_change(dcontext_t *dcontext, app_pc base, size_t size, uint flags)
 {
     if (audit_callbacks == NULL)
         return;
 
-    audit_callbacks->audit_memory_executable_change(dcontext, base, size,
-                                                    becomes_executable, safe_to_read);
+    audit_callbacks->audit_memory_executable_change(dcontext, base, size, flags);
 }
 
 inline void

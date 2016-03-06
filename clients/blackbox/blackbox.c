@@ -268,16 +268,18 @@ audit_process_terminating(bool external, bool is_crash, const char *file,
 }
 
 static void
-audit_memory_executable_change(dcontext_t *dcontext, app_pc base, size_t size,
-                               bool becomes_executable, bool safe_to_read)
+audit_memory_executable_change(dcontext_t *dcontext, app_pc base, size_t size, uint flags)
 {
-    module_location_t *module = get_module_for_address(base);
-    if (module != NULL && module->type == module_type_anonymous) {
-        if (becomes_executable)
-            add_shadow_pages(dcontext, base, size, true);
-        else
-            remove_shadow_pages(dcontext, base, size);
+    if (false && TEST(GENCODE_PERM_SPECULATIVE, flags)) {
+        module_location_t *module = get_module_for_address(base);
+        if (module == NULL || module->type != module_type_anonymous)
+            return; /* not code */
     }
+
+    if (TEST(GENCODE_PERM_BECOMES_EXECUTABLE, flags))
+        add_shadow_pages(dcontext, base, size, TEST(GENCODE_PERM_SAFE_TO_READ, flags));
+    else
+        remove_shadow_pages(dcontext, base, size);
 }
 
 static void
@@ -403,7 +405,7 @@ static audit_callbacks_t callbacks = {
 
 #define MAX_MONITOR_DATASET_DIR_LEN 256
 
-uint crowd_safe_options;
+uint crowd_safe_options = 0;
 uint bb_analysis_level;
 static char monitor_dataset_buf[MAX_MONITOR_DATASET_DIR_LEN] = {0};
 char *monitor_dataset_dir = monitor_dataset_buf;
@@ -430,31 +432,17 @@ get_uint_option(const char *option, uint *value)
     }
 }
 
-DR_EXPORT void
-dr_init(client_id_t id)
+static void
+parse_options(client_id_t id)
 {
     const char *options = dr_get_options(id);
 
-    drsym_init(0);
-
     dr_printf("options: %s\n", options);
-
-    process_start_time = dr_get_milliseconds();
-
-    init_module_observer(false/*not fork*/);
-
-    dr_register_exit_event(event_exit);
-    dr_register_audit_callbacks(&callbacks);
 
     if (options != NULL && strstr("-dataset_home", options) == 0) {
         options += strlen("-dataset_home ");
         strcpy(monitor_dataset_buf, options);
     }
-
-    /*
-    dr_get_string_option("dataset_home",
-                         monitor_dataset_dir, MAX_MONITOR_DATASET_DIR_LEN);
-    */
 
     if (has_option("monitor"))
         crowd_safe_options |= CROWD_SAFE_MONITOR_OPTION;
@@ -471,7 +459,7 @@ dr_init(client_id_t id)
         }
         */
 
-    if (has_option("xhash"))
+    //if (has_option("xhash"))
         crowd_safe_options |= CROWD_SAFE_RECORD_XHASH_OPTION;
     if (has_option("netmon"))
         crowd_safe_options |= CROWD_SAFE_NETWORK_MONITOR_OPTION;
@@ -481,6 +469,26 @@ dr_init(client_id_t id)
         crowd_safe_options |= CROWD_SAFE_DEBUG_SCRIPT_OPTION;
     if (get_uint_option("analysis", &bb_analysis_level))
         crowd_safe_options |= CROWD_SAFE_BB_ANALYSIS_OPTION;
+}
+
+DR_EXPORT void
+dr_init(client_id_t id)
+{
+    drsym_init(0);
+
+    process_start_time = dr_get_milliseconds();
+
+    parse_options(id);
+
+    init_module_observer(false/*not fork*/);
+
+    dr_register_exit_event(event_exit);
+    dr_register_audit_callbacks(&callbacks);
+
+    /*
+    dr_get_string_option("dataset_home",
+                         monitor_dataset_dir, MAX_MONITOR_DATASET_DIR_LEN);
+    */
 
     init_crowd_safe_log(false/*not fork*/, dr_is_wow64());
     init_link_observer(GLOBAL_DCONTEXT, false/*not fork*/);

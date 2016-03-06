@@ -765,6 +765,9 @@ memory_released(dcontext_t *dcontext, app_pc start, app_pc end) {
 void
 add_shadow_pages(dcontext_t *dcontext, app_pc base, size_t size, bool safe_to_read) {
     uint i, count = size >> 0xc;
+
+    CS_DET("add_shadow_pages: "PX" +0x%x\n", base, size);
+
     for (i = 0; i < count; i++)
         add_shadow_page(dcontext, base + (i * 0x1000), safe_to_read);
 }

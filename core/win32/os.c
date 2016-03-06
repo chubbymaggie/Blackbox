@@ -3999,19 +3999,20 @@ process_mmap(dcontext_t *dcontext, app_pc pc, size_t size, bool add, const char 
     }
 
 #ifdef SECURITY_AUDIT
+    /* not a speculative permission change (it is code) */
     if ((mbi.BaseAddress != NULL) && prot_is_executable(mbi.Protect) && !image) {
         if (add) {
             SEC_LOG(4, "DMP| Adding executable memory region: "PX" +0x%x\n",
                    mbi.BaseAddress, mbi.RegionSize);
 
             audit_memory_executable_change(dcontext, mbi.BaseAddress, mbi.RegionSize,
-                                           true/*+x*/, true/*safe to read*/);
+                                           GENCODE_PERM_BECOMES_EXECUTABLE |
+                                           GENCODE_PERM_SAFE_TO_READ);
         } else {
             SEC_LOG(4, "DMP| Removing executable memory region: "PX" +0x%x\n",
                    mbi.BaseAddress, mbi.RegionSize);
 
-            audit_memory_executable_change(dcontext, mbi.BaseAddress, mbi.RegionSize,
-                                           true/*-x*/, false/*unsafe to read*/);
+            audit_memory_executable_change(dcontext, mbi.BaseAddress, mbi.RegionSize, 0);
         }
     }
 #endif
