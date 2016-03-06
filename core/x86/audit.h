@@ -106,9 +106,6 @@ typedef fragment_t dr_fragment_t; /* not API exported */
 typedef struct _audit_callbacks_t {
     file_t *audit_log_file;
     uint loglevel;
-    void (*audit_init)(dcontext_t *dcontext, bool is_fork);
-    void (*audit_exit)();
-    void (*audit_init_log)(bool is_fork, bool is_wow64_process);
     file_t (*audit_create_logfile)();
     void (*audit_dynamo_model_initialized)();
     void (*audit_thread_init)(dcontext_t *dcontext);
@@ -332,33 +329,6 @@ audit_thread_exit(dcontext_t *dcontext);
  */
 
 /* global process state */
-
-inline void
-audit_client_init(dcontext_t *dcontext, bool is_fork)
-{
-    if (audit_callbacks == NULL)
-        return;
-
-    audit_callbacks->audit_init(dcontext, is_fork);
-}
-
-inline void
-audit_client_exit()
-{
-    if (audit_callbacks == NULL)
-        return;
-
-    audit_callbacks->audit_exit();
-}
-
-inline void
-audit_init_log(bool is_fork, bool is_wow64_process)
-{
-    if (audit_callbacks == NULL)
-        return;
-
-    audit_callbacks->audit_init_log(is_fork, is_wow64_process);
-}
 
 inline file_t
 audit_create_logfile()

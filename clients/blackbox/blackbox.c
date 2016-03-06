@@ -150,22 +150,10 @@ audit_wait_for_multiple_objects(dcontext_t *dcontext, uint result, uint handle_c
 }
 #endif
 
-static void
-audit_init_log(bool is_fork, bool is_wow64_process)
-{
-    init_crowd_safe_log(is_fork, is_wow64_process);
-}
-
 static file_t
 audit_create_logfile()
 {
     return create_early_dr_log();
-}
-
-static void
-audit_init(dcontext_t *dcontext, bool is_fork)
-{
-    init_link_observer(GLOBAL_DCONTEXT, is_fork);
 }
 
 static void
@@ -373,9 +361,6 @@ event_exit(void)
 static audit_callbacks_t callbacks = {
     &cs_log_file,
     CROWD_SAFE_LOG_LEVEL,
-    audit_init,
-    audit_exit,
-    audit_init_log,
     audit_create_logfile,
     audit_dynamo_model_initialized,
     audit_thread_init,
@@ -497,15 +482,6 @@ dr_init(client_id_t id)
     if (get_uint_option("analysis", &bb_analysis_level))
         crowd_safe_options |= CROWD_SAFE_BB_ANALYSIS_OPTION;
 
-    /*
-    OPTION_DEFAULT(uint, bb_analysis_level, 0U,
-        "output control for the bb analysis log")
-    OPTION_DEFAULT(bool, monitor, false, "monitor control flow")
-    OPTION_DEFAULT(pathstring_t, dataset_home, EMPTY_STRING,
-        "path to the target's dataset home directory")
-    OPTION_DEFAULT(bool, netmon, false, "monitor network")
-    OPTION_DEFAULT(bool, xhash, false, "record cross-module hashcodes")
-    OPTION_DEFAULT(bool, wdb_script, false, "windbg script")
-    OPTION_DEFAULT(bool, meta_on_clock, false, "write metadata on clock tick")
-    */
+    init_crowd_safe_log(false/*not fork*/, dr_is_wow64());
+    init_link_observer(GLOBAL_DCONTEXT, false/*not fork*/);
 }

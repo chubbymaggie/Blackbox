@@ -198,8 +198,7 @@ if ($header) {
      "$core/lib/dr_inject.h",
      "$core/win32/ntdll_types.h",  # Windows type definitions
      "$core/win32/ntdll.h",        # Windows type definitions
-     "$core/x86/audit.h",          # security audit callbacks
-     );
+    );
 
 # PR 214947: VMware retroactively holds the copyright.
 $copyright = q+/* **********************************************************
@@ -257,7 +256,10 @@ sub keep_define($)
             $def eq "DR_FAST_IR");
 }
 
-foreach $file (@headers) {
+sub header
+{
+    my $file = shift;
+
     open(IN, "< $file") || die "Error: Couldn't open $file for input\n";
     if ($debug) {
         print stderr "Working on $file\n";
@@ -292,6 +294,14 @@ foreach $file (@headers) {
         print OUT "\n";
     }
     close(IN);
+}
+
+foreach $file (@headers) {
+  &header($file);
+}
+
+if (defined($defines{SECURITY_AUDIT})) {
+  &header("$core/x86/audit.h");  # security audit API
 }
 
 if ($header) {

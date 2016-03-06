@@ -68,10 +68,6 @@
 
 #include <string.h>
 
-#ifdef SECURITY_AUDIT
-file_t early_logfile = INVALID_FILE;
-#endif
-
 #ifdef WINDOWS
 /* for close handle, duplicate handle, free memory and constants associated with them */
 /* also for nt_terminate_process_for_app() */
@@ -365,9 +361,6 @@ DYNAMORIO_EXPORT int
 dynamorio_app_init(void)
 {
     int size;
-#ifdef SECURITY_AUDIT
-    // audit_init_log(false/*not fork*/, is_wow64_process(NT_CURRENT_PROCESS));
-#endif
 
     if (!dynamo_initialized /* we do enter if nullcalls is on */) {
 
@@ -413,12 +406,6 @@ dynamorio_app_init(void)
 
         config_init();
         options_init();
-#if defined(DEBUG) && defined(SECURITY_AUDIT)
-        if (stats->loglevel > 0) {
-            main_logfile = audit_create_logfile();
-            early_logfile = main_logfile;
-        }
-#endif
 #ifdef WINDOWS
         syscalls_init_options_read(); /* must be called after options_init
                                        * but before init_syscall_trampolines */
@@ -427,11 +414,6 @@ dynamorio_app_init(void)
         data_section_init();
 
 #ifdef DEBUG
-# ifdef SECURITY_AUDIT
-        if (stats->loglevel > 0) {
-            main_logfile = INVALID_FILE;
-        }
-# endif
         /* decision: nullcalls WILL create a dynamorio.log file and
          * fill it with perfctr stats!
          */
@@ -561,8 +543,6 @@ dynamorio_app_init(void)
          */
         instrument_init();
 # endif
-        audit_init_log(false/*not fork*/, is_wow64_process(NT_CURRENT_PROCESS));
-        audit_client_init(GLOBAL_DCONTEXT, false); // cs-todo: move into dr_init()?
 #endif
         arch_init();
         synch_init();
@@ -743,11 +723,6 @@ dynamorio_app_init(void)
         destroy_event(never_signaled);
     }
 
-#ifdef SECURITY_AUDIT
-        if (stats->loglevel > 0 && early_logfile != INVALID_FILE)
-            dr_close_file(early_logfile);
-#endif
-
     return SUCCESS;
 }
 
@@ -755,9 +730,6 @@ dynamorio_app_init(void)
 void
 dynamorio_fork_init(dcontext_t *dcontext)
 {
-#ifdef SECURITY_AUDIT
-    audit_client_init(dcontext, true/*is fork*/);
-#endif
     /* on a fork we want to re-initialize some data structures, especially
      * log files, which we want a separate directory for
      */
@@ -1202,10 +1174,6 @@ synch_with_threads_at_exit(thread_synch_state_t synch_res)
      * are waiting on it won't get in our way (see thread_init()) */
     dynamo_exited = true;
     end_synch_with_all_threads(threads, num_threads, false/*don't resume*/);
-
-#ifdef SECURITY_AUDIT
-    audit_client_exit();
-#endif
 }
 
 #ifdef DEBUG
@@ -1352,21 +1320,11 @@ dynamo_process_exit(void)
         }
     }
 
-# ifdef SECURITY_AUDIT
-    if (dynamo_exited && early_logfile != INVALID_FILE)
-        dr_close_file(early_logfile);
-# endif
-
     return SUCCESS;
 
 #else /* DEBUG */
-    if (dynamo_exited) {
-# ifdef SECURITY_AUDIT
-        if  (early_logfile != INVALID_FILE)
-            dr_close_file(early_logfile);
-# endif
+    if (dynamo_exited)
         return SUCCESS;
-    }
 
     /* don't need to do much!
      * we didn't create any IPC objects or anything that might be persistent
@@ -1497,10 +1455,6 @@ dynamo_process_exit(void)
     /* so make sure eventlog connection is terminated (if present)  */
     os_fast_exit();
 
-#ifdef SECURITY_AUDIT
-    if (dynamo_exited && early_logfile != INVALID_FILE)
-        dr_close_file(early_logfile);
-#endif
     return SUCCESS;
 #endif /* !DEBUG */
 }
