@@ -628,7 +628,9 @@ dynamorio_app_init(void)
             sideline_init();
 #endif
 
+#ifdef SECURITY_AUDIT
         audit_init();
+#endif
 
         /* thread-specific initialization for the first thread we inject in
          * (in a race with injected threads, sometimes it is not the primary thread)
@@ -1425,7 +1427,7 @@ dynamo_process_exit(void)
                  * dr_fragment_deleted() callbacks.
                  */
 #ifdef SECURITY_AUDIT
-                link_observer_thread_exit(threads[i]->dcontext);
+                audit_thread_exit(threads[i]->dcontext);
 #endif
                 fragment_thread_exit(threads[i]->dcontext);
 # ifdef UNIX

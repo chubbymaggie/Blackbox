@@ -1785,7 +1785,7 @@ link_fragment_incoming(dcontext_t *dcontext, fragment_t *f, bool new_fragment)
 #ifdef SECURITY_AUDIT
         if (!(LINKSTUB_SPECIAL(l->flags) || TEST(FRAG_TEMP_PRIVATE, f->flags) ||
               TEST(FRAG_IS_TRACE, in_f->flags))) {
-            audit_fragment_direct_link(dcontext, in_f->tag, f->tag, 0xff/*what ordinal??*/);
+            audit_fragment_direct_link(dcontext, in_f->tag, f->tag, UNKNOWN_ORDINAL);
         }
 #endif
         if (is_linkable(dcontext, in_f, l, f,
@@ -2351,7 +2351,11 @@ shift_links_to_new_fragment(dcontext_t *dcontext,
         new_f->flags |= FRAG_LINKED_INCOMING;
         for (l = new_f->in_xlate.incoming_stubs; l != NULL;
              l = LINKSTUB_NEXT_INCOMING(l)) {
-            fragment_t *in_f = linkstub_fragment(dcontext, l);
+            fragment_t *in_f;
+
+            if (TESTALL(LINK_FAR|LINK_JMP, l->flags))
+                continue; /* should this be in the incoming list? */
+            in_f = linkstub_fragment(dcontext, l);
             ASSERT(!is_empty_fragment(in_f));
             if (is_linkable(dcontext, in_f, l, new_f, have_link_lock,
                             true/*mark new trace heads*/)) {

@@ -2,8 +2,6 @@
 #define INDIRECT_LINK_OBSERVER_H 1
 
 #include "dr_api.h"
-//#include "../../core/globals.h"
-//#include "../../core/x86/arch.h"
 
 void
 init_indirect_link_observer(dcontext_t *dcontext);

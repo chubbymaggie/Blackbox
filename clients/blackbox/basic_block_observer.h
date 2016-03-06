@@ -6,9 +6,6 @@
 
 #include "dr_api.h"
 
-//#include "../../core/globals.h"
-//#include "../../core/instrlist.h"
-
 void
 init_basic_block_observer(bool isFork);
 
@@ -25,8 +22,8 @@ write_graph_metadata();
  * to the hashlog and add it to the IBP table. If the user has requested a BB
  * analysis file, the requested content is output to the analysis file. */
 void
-notify_basic_block_constructed(dcontext_t *dcontext,
-    app_pc tag, instrlist_t *ilist, int syscall_number);
+notify_basic_block_constructed(dcontext_t *dcontext, app_pc tag,
+                               instrlist_t *ilist, int syscall_number);
 
 void
 notify_trace_constructed(dcontext_t *dcontext, instrlist_t *ilist);

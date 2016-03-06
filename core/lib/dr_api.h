@@ -79,8 +79,10 @@ extern "C" {
 /* CREATE_INSTR_ macros */
 #include "dr_ir_macros.h"
 
+//#ifdef SECURITY_AUDIT
 /* security audit callbacks */
-#include "dr_audit.h"
+# include "dr_audit.h"
+//#endif
 
 #ifndef DYNAMORIO_STANDALONE
 /**

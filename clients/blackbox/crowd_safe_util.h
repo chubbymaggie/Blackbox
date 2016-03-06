@@ -10,8 +10,13 @@
 #ifdef ASSERT
 # undef ASSERT
 #endif
-#define ASSERT(condition) DR_ASSERT_MSG(condition, ##condition)
-#define ASSERT_NOT_REACHED() ASSERT(false)
+#ifdef DEBUG
+# define ASSERT(condition) DR_ASSERT_MSG(condition, ##condition)
+# define ASSERT_NOT_REACHED() ASSERT(false)
+#else
+# define ASSERT
+# define ASSERT_NOT_REACHED()
+#endif
 
 #include "drhashtable.h"
 #include "drvector.h"
@@ -28,7 +33,11 @@
 #define PRAGMA_VAR_NAME_VALUE(var) #var "=" PRAGMA_VALUE(var)
 // use it like this: #pragma message(PRAGMA_VAR_NAME_VALUE(SOMETHING))
 
-#define DODEBUG(statement) do { statement } while (0)
+#ifdef DEBUG
+# define DODEBUG(statement) do { statement } while (0)
+#else
+# define DODEBUG(statement)
+#endif
 
 #define CS_LOG_NONE 0
 #define CS_LOG_ERRORS 1

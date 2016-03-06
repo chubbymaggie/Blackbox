@@ -258,12 +258,11 @@ crowd_safe_dispatch(dcontext_t *dcontext) {
                 matched_address = true;
             } else {
                 bool expected = false;
-                int stack_delta = xsp - top->base_pointer;
-                if (stack_delta < 0)
-                    stack_delta = -stack_delta;
 
                 csd->shadow_stack_miss_frame = csd->shadow_stack;
-                if (xsp <= GET_SHADOW_STACK_BOTTOM_FRAME(csd) && (xsp + 0x20) >= top->base_pointer) { // stack_delta > 0x1000) {
+                if (xsp <= GET_SHADOW_STACK_BOTTOM_FRAME(csd) &&
+                    xsp > (GET_SHADOW_STACK_BOTTOM_FRAME(csd) - 0x100000) && /* naively assume 100K stack */
+                    (xsp + 0x10000) >= top->base_pointer) {
                     while ((SHADOW_FRAME(csd)->base_pointer < xsp) &&
                            (SHADOW_FRAME(csd)->base_pointer != (app_pc)SHADOW_STACK_SENTINEL))
                     {
@@ -354,7 +353,7 @@ crowd_safe_dispatch(dcontext_t *dcontext) {
                 }
                 hashtable_add(suspended_shadow_stacks, sss->current_frame->return_address, sss);
             } else {
-                CS_DET("<ss> UR (%d unwound) XSP: "PX" %s SS.XSP: "PX" @ "PX"(%d)"
+                CS_LOG("<ss> UR (%d unwound) XSP: "PX" %s SS.XSP: "PX" @ "PX"(%d)"
                        " | ibp_to: "PX" %s SS.addr: "PX"; thread 0x%x\n",
                        unwind_count, xsp, xsp > top->base_pointer ? ">" : "<",
                        top->base_pointer, int2p(top), SHADOW_STACK_FRAME_NUMBER(csd, top),
